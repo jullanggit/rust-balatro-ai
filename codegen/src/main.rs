@@ -1,3 +1,5 @@
+use std::{env, path::PathBuf};
+
 use isahc::AsyncReadResponseExt;
 use serde::Deserialize;
 use smol::fs;
@@ -174,10 +176,26 @@ fn main() {
             }
         }
 
-        fs::create_dir("assets").await.unwrap();
+        // handle fetched assets
+        let root_dir = {
+            let mut found = false;
+            env::current_dir()
+                .unwrap()
+                .iter()
+                .take_while(|part| {
+                    if *part == "balatro-ai" {
+                        found = true;
+                        return false;
+                    };
+                    found
+                })
+                .collect::<PathBuf>()
+        };
+        let assets = root_dir.join("assets");
+        fs::create_dir(&assets).await.unwrap();
         for (image, name) in images_to_fetch {
             let image = image.await.unwrap().bytes().await.unwrap();
-            fs::write(format!("assets/{name}"), image).await.unwrap();
+            fs::write(assets.join(name), image).await.unwrap();
         }
     });
 }

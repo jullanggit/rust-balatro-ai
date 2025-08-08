@@ -4,14 +4,8 @@ version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
-[build-dependencies]
-isahc = { version = "1.7.2", features = ["json"] }
-smol = "2.0.2"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
-
 [workspace]
-members = ["balatro", "ai"]
+members = ["balatro", "ai", "codegen"]
 
 [[bin]]
 name = "balatro-ai"
