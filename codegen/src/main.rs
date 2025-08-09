@@ -93,7 +93,9 @@ fn main() {
                                 .unwrap()
                                 .as_str()
                                 .unwrap()
-                                .replace(' ', ""),
+                                // rust compatibility
+                                .replace(' ', "")
+                                .replace('8', "Eight"),
                         );
                     }
                     "image" => {
@@ -206,11 +208,11 @@ fn main() {
                                     value: String,
                                     source: String,
                                 }
+                                let [mut copyable, mut perishable, mut eternal] = [None; 3];
+
                                 for value in &values[1..] {
                                     let parsed_compatibility: Compatibility =
                                         serde_json::from_value(value.data.clone()).unwrap();
-
-                                    let [mut copyable, mut perishable, mut eternal] = [None; 3];
 
                                     let value = parsed_compatibility.value.contains("Yes");
                                     match parsed_compatibility.source.as_str() {
@@ -219,16 +221,16 @@ fn main() {
                                         "compat-eternal" => eternal = Some(value),
                                         other => panic!("{other}"),
                                     }
-
-                                    let [copyable, perishable, eternal] =
-                                        [copyable, perishable, eternal].map(Option::unwrap);
-
-                                    compatibility = Some(JokerCompatibility {
-                                        copyable,
-                                        perishable,
-                                        eternal,
-                                    })
                                 }
+
+                                let [copyable, perishable, eternal] =
+                                    [copyable, perishable, eternal].map(Option::unwrap);
+
+                                compatibility = Some(JokerCompatibility {
+                                    copyable,
+                                    perishable,
+                                    eternal,
+                                })
                             }
                             "Effect" | "Unlock Requirement" => {}
                             other => panic!("{other}"),
@@ -272,16 +274,16 @@ fn main() {
             .map(|joker| joker.name.as_str())
             .intersperse(",")
             .collect::<String>();
-        let enum_string = format!("enum JokerType {{ {variants} }}");
+        let enum_string = format!("\nenum JokerType {{ {variants} }}");
 
         // write code
-        const CODEGEN_START: &str = "CODEGEN START";
-        const CODEGEN_END: &str = "CODEGEN END";
+        const CODEGEN_START: &str = "// CODEGEN START";
+        const CODEGEN_END: &str = "// CODEGEN END";
 
         let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
 
         let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
-        let end_codegen = lib_string.find(CODEGEN_END).unwrap();
+        let end_codegen = lib_string.find(CODEGEN_END).unwrap() - 1;
 
         lib_string.replace_range(start_codegen..end_codegen, &enum_string);
 
