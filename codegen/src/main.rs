@@ -8,6 +8,7 @@
 
 use balatro::{JokerCompatibility, JokerEffectType};
 use isahc::AsyncReadResponseExt;
+use parse_wiki_text::{Node, Parameter};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
@@ -18,251 +19,8 @@ use std::{
     process::Command,
 };
 
-#[derive(Deserialize)]
-struct OuterQuery {
-    query: Query,
-}
-#[derive(Deserialize)]
-struct Query {
-    categorymembers: Vec<CategoryMember>,
-}
-#[derive(Deserialize)]
-struct CategoryMember {
-    title: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct OuterParser {
-    parse: Parse,
-}
-#[derive(Deserialize, Debug)]
-struct Parse {
-    properties: Properties,
-}
-#[derive(Deserialize, Debug)]
-struct Properties {
-    infoboxes: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct OuterData {
-    data: Vec<Data>,
-}
-#[derive(Deserialize, Debug)]
-struct Data {
-    r#type: String,
-    data: serde_json::Value,
-}
-
-struct CodegenJoker {
-    name: String,
-    rarity: &'static str,
-    buy_price: u8,
-    sell_price: u8,
-    effect_type: JokerEffectType,
-    compatibility: JokerCompatibility,
-}
-
 fn main() {
     smol::block_on(async {
-        // get jokers
-        let query: OuterQuery = isahc::get_async(
-            "https://balatrogame.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Jokers&cmprop=title|ids&cmlimit=500&format=json&formatversion=2",
-        ).await.unwrap().json().await.unwrap();
-        let queries = query
-            .query
-            .categorymembers
-            .into_iter()
-            .map(|category_member| category_member.title)
-            .filter(|title| !title.contains("Category") && title != "Jokers" && title != "Chaos Theory")
-            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json&formatversion=2", utf8_percent_encode(&title,NON_ALPHANUMERIC)))
-            .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
-
-        let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
-
-        let mut jokers = Vec::new();
-
-        // for every joker
-        for query in queries {
-            let parser: OuterParser = query.await.unwrap().json().await.unwrap();
-            let str = parser.parse.properties.infoboxes;
-
-            let mut name = None;
-            let mut rarity = None;
-            let mut buy_price: Option<u8> = None;
-            let mut sell_price: Option<u8> = None;
-            let mut effect_type = None;
-            let mut compatibility = None;
-
-            let parsed: [OuterData; 1] = serde_json::from_str(&str).unwrap();
-            for data in &parsed[0].data {
-                match data.r#type.as_str() {
-                    "title" => {
-                        let mut string = data
-                            .data
-                            .get("value")
-                            .unwrap()
-                            .as_str()
-                            .unwrap()
-                            // rust compatibility
-                            .replace('8', "Eight");
-
-                        string.remove_matches([' ', '!', '\'', '-', '.']);
-
-                        name = Some(string);
-                    }
-                    "image" => {
-                        images.push((
-                            smol::spawn(isahc::get_async(
-                                data.data.as_array().unwrap()[0]
-                                    .get("url")
-                                    .unwrap()
-                                    .as_str()
-                                    .unwrap(),
-                            )),
-                            name.clone().unwrap(),
-                        ));
-                    }
-                    "group" => {
-                        let values: Vec<Data> =
-                            serde_json::from_value(data.data.get("value").unwrap().clone())
-                                .unwrap();
-
-                        assert!(&values[0].r#type == "header");
-                        assert!(values.iter().skip(1).all(|data| &data.r#type == "data"));
-
-                        match values[0].data.get("value").unwrap().as_str().unwrap() {
-                            "Rarity" => {
-                                let value = values[1].data.get("value").unwrap().as_str().unwrap();
-                                let rarities = ["Common", "Uncommon", "Rare", "Legendary"];
-                                for rarity_str in rarities {
-                                    if value.contains(rarity_str) {
-                                        rarity = Some(rarity_str)
-                                    }
-                                }
-                            }
-                            "Stats" => {
-                                #[derive(Deserialize)]
-                                struct Stat {
-                                    label: String,
-                                    value: String,
-                                }
-
-                                for value in values.iter().skip(1) {
-                                    let stat: Stat =
-                                        serde_json::from_value(value.data.clone()).unwrap();
-                                    match stat.label.as_str() {
-                                        "Buy Price" => {
-                                            buy_price = Some(
-                                                stat.value
-                                                    .chars()
-                                                    .filter(|char| char.is_numeric())
-                                                    .collect::<String>()
-                                                    .parse()
-                                                    .unwrap(),
-                                            )
-                                        }
-                                        "Sell Price" => {
-                                            sell_price = Some(
-                                                stat.value
-                                                    .split(' ')
-                                                    .next_back()
-                                                    .unwrap()
-                                                    .parse()
-                                                    .unwrap(),
-                                            )
-                                        }
-                                        "Type" => {
-                                            effect_type =
-                                                Some(if stat.value.contains("Additive Mult") {
-                                                    JokerEffectType::new(
-                                                        false, true, false, false, false, false,
-                                                    )
-                                                } else if stat.value.contains("Chips") {
-                                                    JokerEffectType::new(
-                                                        true, false, false, false, false, false,
-                                                    )
-                                                } else if stat.value.contains("Multiplicative Mult")
-                                                {
-                                                    JokerEffectType::new(
-                                                        false, false, true, false, false, false,
-                                                    )
-                                                } else if stat
-                                                    .value
-                                                    .contains("Chips and Additive Mult")
-                                                {
-                                                    JokerEffectType::new(
-                                                        true, true, false, false, false, false,
-                                                    )
-                                                } else if stat.value.contains("Effect") {
-                                                    JokerEffectType::new(
-                                                        false, false, false, true, false, false,
-                                                    )
-                                                } else if stat.value.contains("Retrigger") {
-                                                    JokerEffectType::new(
-                                                        false, false, false, false, true, false,
-                                                    )
-                                                } else if stat.value.contains("Economy") {
-                                                    JokerEffectType::new(
-                                                        false, false, false, false, false, true,
-                                                    )
-                                                } else {
-                                                    unreachable!()
-                                                });
-                                        }
-                                        "Activation" => {}
-                                        other => panic!("{other}"),
-                                    }
-                                }
-                            }
-                            "Compatibility" => {
-                                #[derive(Deserialize)]
-                                struct Compatibility {
-                                    value: String,
-                                    source: String,
-                                }
-                                let [mut copyable, mut perishable, mut eternal] = [None; 3];
-
-                                for value in &values[1..] {
-                                    let parsed_compatibility: Compatibility =
-                                        serde_json::from_value(value.data.clone()).unwrap();
-
-                                    let value = parsed_compatibility.value.contains("Yes");
-                                    match parsed_compatibility.source.as_str() {
-                                        "compat-copyable" => copyable = Some(value),
-                                        "compat-perishable" => perishable = Some(value),
-                                        "compat-eternal" => eternal = Some(value),
-                                        other => panic!("{other}"),
-                                    }
-                                }
-
-                                let [copyable, perishable, eternal] =
-                                    [copyable, perishable, eternal].map(Option::unwrap);
-
-                                compatibility = Some(JokerCompatibility {
-                                    copyable,
-                                    perishable,
-                                    eternal,
-                                })
-                            }
-                            "Effect" | "Unlock Requirement" => {}
-                            other => panic!("{other}"),
-                        }
-                    }
-                    other => panic!("{other}"),
-                }
-            }
-
-            jokers.push(CodegenJoker {
-                name: name.unwrap(),
-                rarity: rarity.unwrap(),
-                buy_price: buy_price.unwrap(),
-                sell_price: sell_price.unwrap(),
-                effect_type: effect_type.unwrap(),
-                compatibility: compatibility.unwrap(),
-            });
-        }
-
         let root_dir = {
             let mut found = false;
             env::current_dir()
@@ -278,19 +36,356 @@ fn main() {
                 .collect::<PathBuf>()
         };
 
-        codegen(jokers, &root_dir).await;
+        let mut code = String::new();
 
-        handle_assets(images, root_dir).await;
-    });
+        code.push_str(&tarots().await);
+        code.push_str(&jokers(&root_dir).await);
+
+        // write code
+        let lib_path = root_dir.join("balatro/src/lib.rs");
+
+        const CODEGEN_START: &str = "// CODEGEN START";
+        const CODEGEN_END: &str = "// CODEGEN END";
+
+        let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
+
+        let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
+        let end_codegen = lib_string.find(CODEGEN_END).unwrap() - 1;
+
+        lib_string.replace_range(start_codegen..end_codegen, &code);
+
+        fs::write(&lib_path, lib_string).await.unwrap();
+
+        // format code
+        Command::new("cargo")
+            .args(["fmt", "-p", "balatro"])
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap()
+            .exit_ok()
+            .unwrap();
+    })
+}
+
+async fn tarots() -> String {
+    #[derive(Deserialize, Debug)]
+    struct ParseWikitext {
+        parse: Wikitext,
+    }
+    #[derive(Deserialize, Debug)]
+    struct Wikitext {
+        wikitext: String,
+    }
+    let query: ParseWikitext = isahc::get_async("https://balatrowiki.org/api.php?action=parse&page=Tarot_Cards&prop=wikitext&format=json&formatversion=2").await.unwrap().json().await.unwrap();
+    let parsed = parse_wiki_text::Configuration::default().parse(&query.parse.wikitext);
+
+    // get table
+    let items = parsed
+        .nodes
+        .into_iter()
+        .skip_while(|node| {
+            // heading before table
+            if let Node::Heading { nodes, .. } = node
+                && let Node::Text { value, .. } = nodes[0]
+                && value == "List of Tarot Cards"
+            {
+                false
+            } else {
+                true
+            }
+        })
+        .find_map(|node| {
+            if let Node::UnorderedList { items, .. } = node {
+                Some(items)
+            } else {
+                None
+            }
+        })
+        .expect("List of Tarot Cards should exist");
+
+    // extract tarot names
+    let tarot_names = items
+        .into_iter()
+        .map(|item| {
+            item.nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Node::Template {
+                        name, parameters, ..
+                    } = node
+                        // make sure its the right template
+                        && let Node::Text { value: "Tarot", .. } = name[0]
+                        // extract tarot name
+                        && let Parameter { value, .. } = &parameters[0]
+                        && let Node::Text { value, .. } = value[0]
+                    {
+                        Some(value)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    todo!()
+}
+
+struct CodegenJoker {
+    name: String,
+    rarity: &'static str,
+    buy_price: u8,
+    sell_price: u8,
+    effect_type: JokerEffectType,
+    compatibility: JokerCompatibility,
+}
+
+async fn jokers(root_dir: &Path) -> String {
+    #[derive(Deserialize)]
+    struct OuterQuery {
+        query: Query,
+    }
+    #[derive(Deserialize)]
+    struct Query {
+        categorymembers: Vec<CategoryMember>,
+    }
+    #[derive(Deserialize)]
+    struct CategoryMember {
+        title: String,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct OuterParser {
+        parse: Parse,
+    }
+    #[derive(Deserialize, Debug)]
+    struct Parse {
+        properties: Properties,
+    }
+    #[derive(Deserialize, Debug)]
+    struct Properties {
+        infoboxes: String,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct OuterData {
+        data: Vec<Data>,
+    }
+    #[derive(Deserialize, Debug)]
+    struct Data {
+        r#type: String,
+        data: serde_json::Value,
+    }
+
+    // get jokers
+    let query: OuterQuery = isahc::get_async(
+            "https://balatrogame.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Jokers&cmprop=title|ids&cmlimit=500&format=json&formatversion=2",
+        ).await.unwrap().json().await.unwrap();
+    let queries = query
+            .query
+            .categorymembers
+            .into_iter()
+            .map(|category_member| category_member.title)
+            .filter(|title| !title.contains("Category") && title != "Jokers" && title != "Chaos Theory")
+            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json&formatversion=2", utf8_percent_encode(&title,NON_ALPHANUMERIC)))
+            .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
+
+    let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
+
+    let mut jokers = Vec::new();
+
+    // for every joker
+    for query in queries {
+        let parser: OuterParser = query.await.unwrap().json().await.unwrap();
+        let str = parser.parse.properties.infoboxes;
+
+        let mut name = None;
+        let mut rarity = None;
+        let mut buy_price: Option<u8> = None;
+        let mut sell_price: Option<u8> = None;
+        let mut effect_type = None;
+        let mut compatibility = None;
+
+        let parsed: [OuterData; 1] = serde_json::from_str(&str).unwrap();
+        for data in &parsed[0].data {
+            match data.r#type.as_str() {
+                "title" => {
+                    let mut string = data
+                        .data
+                        .get("value")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        // rust compatibility
+                        .replace('8', "Eight");
+
+                    string.remove_matches([' ', '!', '\'', '-', '.']);
+
+                    name = Some(string);
+                }
+                "image" => {
+                    images.push((
+                        smol::spawn(isahc::get_async(
+                            data.data.as_array().unwrap()[0]
+                                .get("url")
+                                .unwrap()
+                                .as_str()
+                                .unwrap(),
+                        )),
+                        name.clone().unwrap(),
+                    ));
+                }
+                "group" => {
+                    let values: Vec<Data> =
+                        serde_json::from_value(data.data.get("value").unwrap().clone()).unwrap();
+
+                    assert!(&values[0].r#type == "header");
+                    assert!(values.iter().skip(1).all(|data| &data.r#type == "data"));
+
+                    match values[0].data.get("value").unwrap().as_str().unwrap() {
+                        "Rarity" => {
+                            let value = values[1].data.get("value").unwrap().as_str().unwrap();
+                            let rarities = ["Common", "Uncommon", "Rare", "Legendary"];
+                            for rarity_str in rarities {
+                                if value.contains(rarity_str) {
+                                    rarity = Some(rarity_str)
+                                }
+                            }
+                        }
+                        "Stats" => {
+                            #[derive(Deserialize)]
+                            struct Stat {
+                                label: String,
+                                value: String,
+                            }
+
+                            for value in values.iter().skip(1) {
+                                let stat: Stat =
+                                    serde_json::from_value(value.data.clone()).unwrap();
+                                match stat.label.as_str() {
+                                    "Buy Price" => {
+                                        buy_price = Some(
+                                            stat.value
+                                                .chars()
+                                                .filter(|char| char.is_numeric())
+                                                .collect::<String>()
+                                                .parse()
+                                                .unwrap(),
+                                        )
+                                    }
+                                    "Sell Price" => {
+                                        sell_price = Some(
+                                            stat.value
+                                                .split(' ')
+                                                .next_back()
+                                                .unwrap()
+                                                .parse()
+                                                .unwrap(),
+                                        )
+                                    }
+                                    "Type" => {
+                                        effect_type =
+                                            Some(if stat.value.contains("Additive Mult") {
+                                                JokerEffectType::new(
+                                                    false, true, false, false, false, false,
+                                                )
+                                            } else if stat.value.contains("Chips") {
+                                                JokerEffectType::new(
+                                                    true, false, false, false, false, false,
+                                                )
+                                            } else if stat.value.contains("Multiplicative Mult") {
+                                                JokerEffectType::new(
+                                                    false, false, true, false, false, false,
+                                                )
+                                            } else if stat.value.contains("Chips and Additive Mult")
+                                            {
+                                                JokerEffectType::new(
+                                                    true, true, false, false, false, false,
+                                                )
+                                            } else if stat.value.contains("Effect") {
+                                                JokerEffectType::new(
+                                                    false, false, false, true, false, false,
+                                                )
+                                            } else if stat.value.contains("Retrigger") {
+                                                JokerEffectType::new(
+                                                    false, false, false, false, true, false,
+                                                )
+                                            } else if stat.value.contains("Economy") {
+                                                JokerEffectType::new(
+                                                    false, false, false, false, false, true,
+                                                )
+                                            } else {
+                                                unreachable!()
+                                            });
+                                    }
+                                    "Activation" => {}
+                                    other => panic!("{other}"),
+                                }
+                            }
+                        }
+                        "Compatibility" => {
+                            #[derive(Deserialize)]
+                            struct Compatibility {
+                                value: String,
+                                source: String,
+                            }
+                            let [mut copyable, mut perishable, mut eternal] = [None; 3];
+
+                            for value in &values[1..] {
+                                let parsed_compatibility: Compatibility =
+                                    serde_json::from_value(value.data.clone()).unwrap();
+
+                                let value = parsed_compatibility.value.contains("Yes");
+                                match parsed_compatibility.source.as_str() {
+                                    "compat-copyable" => copyable = Some(value),
+                                    "compat-perishable" => perishable = Some(value),
+                                    "compat-eternal" => eternal = Some(value),
+                                    other => panic!("{other}"),
+                                }
+                            }
+
+                            let [copyable, perishable, eternal] =
+                                [copyable, perishable, eternal].map(Option::unwrap);
+
+                            compatibility = Some(JokerCompatibility {
+                                copyable,
+                                perishable,
+                                eternal,
+                            })
+                        }
+                        "Effect" | "Unlock Requirement" => {}
+                        other => panic!("{other}"),
+                    }
+                }
+                other => panic!("{other}"),
+            }
+        }
+
+        jokers.push(CodegenJoker {
+            name: name.unwrap(),
+            rarity: rarity.unwrap(),
+            buy_price: buy_price.unwrap(),
+            sell_price: sell_price.unwrap(),
+            effect_type: effect_type.unwrap(),
+            compatibility: compatibility.unwrap(),
+        });
+    }
+
+    let string = jokers_codegen(jokers).await;
+    handle_assets(images, root_dir).await;
+
+    string
 }
 
 #[expect(clippy::type_complexity)]
 async fn handle_assets(
+    // (task, asset name)
     images: Vec<(
         smol::Task<Result<isahc::Response<isahc::AsyncBody>, isahc::Error>>,
         String,
     )>,
-    root_dir: PathBuf,
+    root_dir: &Path,
 ) {
     let assets = root_dir.join("assets");
     let _ = fs::create_dir(&assets).await; // ignore already exists error
@@ -304,9 +399,7 @@ async fn handle_assets(
     }
 }
 
-async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
-    let lib_path = root_dir.join("balatro/src/lib.rs");
-
+async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
     let mut code = String::new();
 
     // enum definition
@@ -359,26 +452,5 @@ async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
     // impl block end
     writeln!(code, "}}").unwrap();
 
-    // write code
-    const CODEGEN_START: &str = "// CODEGEN START";
-    const CODEGEN_END: &str = "// CODEGEN END";
-
-    let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
-
-    let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
-    let end_codegen = lib_string.find(CODEGEN_END).unwrap() - 1;
-
-    lib_string.replace_range(start_codegen..end_codegen, &code);
-
-    fs::write(&lib_path, lib_string).await.unwrap();
-
-    // format code
-    Command::new("cargo")
-        .args(["fmt", "-p", "balatro"])
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap()
-        .exit_ok()
-        .unwrap();
+    code
 }
