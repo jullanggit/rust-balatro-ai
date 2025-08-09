@@ -37,7 +37,11 @@ struct OuterParser {
 }
 #[derive(Deserialize, Debug)]
 struct Parse {
-    properties: Vec<serde_json::Value>,
+    properties: Properties,
+}
+#[derive(Deserialize, Debug)]
+struct Properties {
+    infoboxes: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -63,7 +67,7 @@ fn main() {
     smol::block_on(async {
         // get jokers
         let query: OuterQuery = isahc::get_async(
-            "https://balatrogame.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Jokers&cmprop=title|ids&cmlimit=500&format=json",
+            "https://balatrogame.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Jokers&cmprop=title|ids&cmlimit=500&format=json&formatversion=2",
         ).await.unwrap().json().await.unwrap();
         let queries = query
             .query
@@ -71,7 +75,7 @@ fn main() {
             .into_iter()
             .map(|category_member| category_member.title)
             .filter(|title| !title.contains("Category") && title != "Jokers" && title != "Chaos Theory")
-            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json", utf8_percent_encode(&title,NON_ALPHANUMERIC)))
+            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json&formatversion=2", utf8_percent_encode(&title,NON_ALPHANUMERIC)))
             .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
 
         let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
@@ -81,11 +85,7 @@ fn main() {
         // for every joker
         for query in queries {
             let parser: OuterParser = query.await.unwrap().json().await.unwrap();
-            let str = parser.parse.properties[0]
-                .get("*")
-                .unwrap()
-                .as_str()
-                .unwrap();
+            let str = parser.parse.properties.infoboxes;
 
             let mut name = None;
             let mut rarity = None;
@@ -94,7 +94,7 @@ fn main() {
             let mut effect_type = None;
             let mut compatibility = None;
 
-            let parsed: [OuterData; 1] = serde_json::from_str(str).unwrap();
+            let parsed: [OuterData; 1] = serde_json::from_str(&str).unwrap();
             for data in &parsed[0].data {
                 match data.r#type.as_str() {
                     "title" => {
