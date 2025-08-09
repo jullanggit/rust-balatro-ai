@@ -1,9 +1,11 @@
+#![feature(iter_intersperse)]
+
 use balatro::{JokerCompatibility, JokerEffectType};
-use isahc::{AsyncReadResponseExt, http::uri::Uri};
+use isahc::AsyncReadResponseExt;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
-use std::{env, path::PathBuf, str::FromStr};
+use std::{convert::Infallible, env, path::PathBuf};
 
 #[derive(Deserialize)]
 struct OuterQuery {
@@ -53,6 +55,17 @@ fn main() {
             .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
 
         let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
+
+        struct Joker {
+            name: String,
+            rarity: &'static str,
+            buy_price: u8,
+            sell_price: u8,
+            effect_type: JokerEffectType,
+            compatibility: JokerCompatibility,
+        }
+
+        let mut jokers = Vec::new();
 
         // for every joker
         for query in queries {
@@ -224,9 +237,17 @@ fn main() {
                     other => panic!("{other}"),
                 }
             }
+
+            jokers.push(Joker {
+                name: name.unwrap(),
+                rarity: rarity.unwrap(),
+                buy_price: buy_price.unwrap(),
+                sell_price: sell_price.unwrap(),
+                effect_type: effect_type.unwrap(),
+                compatibility: compatibility.unwrap(),
+            });
         }
 
-        // handle fetched assets
         let root_dir = {
             let mut found = false;
             env::current_dir()
@@ -241,6 +262,32 @@ fn main() {
                 })
                 .collect::<PathBuf>()
         };
+
+        // handle codegen
+        let lib_path = root_dir.join("balatro/src/lib.rs");
+
+        // generate code
+        let variants = jokers
+            .iter()
+            .map(|joker| joker.name.as_str())
+            .intersperse(",")
+            .collect::<String>();
+        let enum_string = format!("enum JokerType {{ {variants} }}");
+
+        // write code
+        const CODEGEN_START: &str = "CODEGEN START";
+        const CODEGEN_END: &str = "CODEGEN END";
+
+        let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
+
+        let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
+        let end_codegen = lib_string.find(CODEGEN_END).unwrap();
+
+        lib_string.replace_range(start_codegen..end_codegen, &enum_string);
+
+        fs::write(&lib_path, lib_string).await.unwrap();
+
+        // handle fetched assets
         let assets = root_dir.join("assets");
         let _ = fs::create_dir(&assets).await; // ignore already exists error
         for (image, name) in images {
