@@ -7,6 +7,8 @@ use isahc::AsyncReadResponseExt;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
+use std::fmt::Write;
+use std::path::Path;
 use std::process::Command;
 use std::{convert::Infallible, env, path::PathBuf};
 
@@ -42,6 +44,15 @@ struct Data {
     data: serde_json::Value,
 }
 
+struct CodegenJoker {
+    name: String,
+    rarity: &'static str,
+    buy_price: u8,
+    sell_price: u8,
+    effect_type: JokerEffectType,
+    compatibility: JokerCompatibility,
+}
+
 fn main() {
     smol::block_on(async {
         // get jokers
@@ -58,15 +69,6 @@ fn main() {
             .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
 
         let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
-
-        struct Joker {
-            name: String,
-            rarity: &'static str,
-            buy_price: u8,
-            sell_price: u8,
-            effect_type: JokerEffectType,
-            compatibility: JokerCompatibility,
-        }
 
         let mut jokers = Vec::new();
 
@@ -245,7 +247,7 @@ fn main() {
                 }
             }
 
-            jokers.push(Joker {
+            jokers.push(CodegenJoker {
                 name: name.unwrap(),
                 rarity: rarity.unwrap(),
                 buy_price: buy_price.unwrap(),
@@ -270,50 +272,85 @@ fn main() {
                 .collect::<PathBuf>()
         };
 
-        // handle codegen
-        let lib_path = root_dir.join("balatro/src/lib.rs");
+        codegen(jokers, &root_dir).await;
 
-        // generate code
+        handle_assets(images, root_dir).await;
+    });
+}
+
+#[expect(clippy::type_complexity)]
+async fn handle_assets(
+    images: Vec<(
+        smol::Task<Result<isahc::Response<isahc::AsyncBody>, isahc::Error>>,
+        String,
+    )>,
+    root_dir: PathBuf,
+) {
+    let assets = root_dir.join("assets");
+    let _ = fs::create_dir(&assets).await; // ignore already exists error
+    for (image, name) in images {
+        let image = image.await.unwrap().bytes().await.unwrap();
+
+        let mut path = assets.join(name);
+        path.set_extension("png");
+
+        fs::write(path, image).await.unwrap();
+    }
+}
+
+async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
+    let lib_path = root_dir.join("balatro/src/lib.rs");
+
+    let mut code = String::new();
+
+    // enum definition
+    {
         let variants = jokers
             .iter()
             .map(|joker| joker.name.as_str())
             .intersperse(",")
             .collect::<String>();
-        let enum_string = format!("\npub enum JokerType {{ {variants} }}");
+        writeln!(code, "\npub enum JokerType {{ {variants} }}").unwrap();
+    }
+    // impl block start
+    writeln!(code, "impl JokerType {{").unwrap();
 
-        // write code
-        const CODEGEN_START: &str = "// CODEGEN START";
-        const CODEGEN_END: &str = "// CODEGEN END";
+    // name()
+    {
+        let branches = jokers
+            .iter()
+            .map(|joker| format!("Self::{} => \"{}\",", joker.name, joker.name))
+            .collect::<String>();
+        writeln!(
+            code,
+            "fn name(&self) -> &'static str {{ match self {{ {branches} }} }}"
+        )
+        .unwrap();
+    }
 
-        let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
+    // impl block end
+    writeln!(code, "}}").unwrap();
 
-        let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
-        let end_codegen = lib_string.find(CODEGEN_END).unwrap() - 1;
+    // write code
+    const CODEGEN_START: &str = "// CODEGEN START";
+    const CODEGEN_END: &str = "// CODEGEN END";
 
-        lib_string.replace_range(start_codegen..end_codegen, &enum_string);
+    let mut lib_string = fs::read_to_string(&lib_path).await.unwrap();
 
-        fs::write(&lib_path, lib_string).await.unwrap();
+    let start_codegen = lib_string.find(CODEGEN_START).unwrap() + CODEGEN_START.len();
+    let end_codegen = lib_string.find(CODEGEN_END).unwrap() - 1;
 
-        // format code
-        Command::new("cargo")
-            .args(["fmt", "-p", "balatro"])
-            .spawn()
-            .unwrap()
-            .wait()
-            .unwrap()
-            .exit_ok()
-            .unwrap();
+    lib_string.replace_range(start_codegen..end_codegen, &code);
 
-        // handle fetched assets
-        let assets = root_dir.join("assets");
-        let _ = fs::create_dir(&assets).await; // ignore already exists error
-        for (image, name) in images {
-            let image = image.await.unwrap().bytes().await.unwrap();
+    fs::write(&lib_path, lib_string).await.unwrap();
 
-            let mut path = assets.join(name);
-            path.set_extension("png");
-
-            fs::write(path, image).await.unwrap();
-        }
-    });
+    // format code
+    Command::new("cargo")
+        .args(["fmt", "-p", "balatro"])
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap()
+        .exit_ok()
+        .unwrap();
 }
