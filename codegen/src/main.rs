@@ -322,13 +322,15 @@ async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
             "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
             jokers
                 .iter()
-                .map(|joker| format!("Self::{} => \"{}\",", joker.name, branch(joker)))
+                .map(|joker| format!("Self::{} => {},", joker.name, branch(joker)))
                 .collect::<String>()
         )
         .unwrap();
     };
 
-    match_fn("name", "&'static str", |joker| joker.name.clone());
+    match_fn("name", "&'static str", |joker| {
+        format!("\"{}\"", joker.name)
+    });
     match_fn("rarity", "Rarity", |joker| {
         format!("Rarity::{}", joker.rarity)
     });
