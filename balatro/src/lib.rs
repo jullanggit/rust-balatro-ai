@@ -174,167 +174,221 @@ impl JokerType {
             _ => Rarity::Legendary,
         }
     }
-    pub fn effect(&self) -> JokerEffect {
+    pub fn effect_type(&self) -> JokerEffectType {
         match *self {
-            JokerType::Joker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::GreedyJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::LustyJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::WrathfulJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::GluttonousJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::JollyJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::ZanyJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::MadJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::CrazyJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::DrollJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::SlyJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::WilyJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::CleverJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::DeviousJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::CraftyJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::HalfJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::CreditCard => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Banner => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::MysticSummit => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::EightBall => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Misprint => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::RaisedFist => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::ChaosTheClown => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::ScaryFace => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::AbstractJoker => JokerEffect::new(false, true, false, false, false, false),
+            JokerType::Joker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::GreedyJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::LustyJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::WrathfulJoker => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::GluttonousJoker => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::JollyJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::ZanyJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::MadJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::CrazyJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::DrollJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::SlyJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::WilyJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::CleverJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::DeviousJoker => {
+                JokerEffectType::new(true, false, false, false, false, false)
+            }
+            JokerType::CraftyJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::HalfJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::CreditCard => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Banner => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::MysticSummit => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::EightBall => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Misprint => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::RaisedFist => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::ChaosTheClown => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::ScaryFace => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::AbstractJoker => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
             JokerType::DelayedGratification => {
-                JokerEffect::new(false, false, false, false, false, true)
+                JokerEffectType::new(false, false, false, false, false, true)
             }
-            JokerType::GrosMichel => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::EvenSteven => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::OddTodd => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::Scholar => JokerEffect::new(true, true, false, false, false, false),
-            JokerType::BusinessCard => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Supernova => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::RideTheBus => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::Egg => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Runner => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::IceCream => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::Splash => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::BlueJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::FacelessJoker => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::GreenJoker => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::Superposition => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::ToDoList => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Cavendish => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::RedCard => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::SquareJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::RiffRaff => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Photograph => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::ReservedParking => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::MailInRebate => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Hallucination => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::FortuneTeller => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::Juggler => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Drunkard => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::GoldenJoker => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Popcorn => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::WalkieTalkie => JokerEffect::new(true, true, false, false, false, false),
-            JokerType::SmileyFace => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::GoldenTicket => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Swashbuckler => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::HangingChad => JokerEffect::new(false, false, false, false, true, false),
-            JokerType::ShootTheMoon => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::JokerStencil => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::FourFingers => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Mime => JokerEffect::new(false, false, false, false, true, false),
+            JokerType::GrosMichel => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::EvenSteven => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::OddTodd => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::Scholar => JokerEffectType::new(true, true, false, false, false, false),
+            JokerType::BusinessCard => {
+                JokerEffectType::new(false, false, false, false, false, true)
+            }
+            JokerType::Supernova => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::RideTheBus => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::Egg => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Runner => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::IceCream => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::Splash => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::BlueJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::FacelessJoker => {
+                JokerEffectType::new(false, false, false, false, false, true)
+            }
+            JokerType::GreenJoker => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::Superposition => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::ToDoList => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Cavendish => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::RedCard => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::SquareJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::RiffRaff => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Photograph => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::ReservedParking => {
+                JokerEffectType::new(false, false, false, false, false, true)
+            }
+            JokerType::MailInRebate => {
+                JokerEffectType::new(false, false, false, false, false, true)
+            }
+            JokerType::Hallucination => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::FortuneTeller => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::Juggler => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Drunkard => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::GoldenJoker => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Popcorn => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::WalkieTalkie => JokerEffectType::new(true, true, false, false, false, false),
+            JokerType::SmileyFace => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::GoldenTicket => {
+                JokerEffectType::new(false, false, false, false, false, true)
+            }
+            JokerType::Swashbuckler => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::HangingChad => JokerEffectType::new(false, false, false, false, true, false),
+            JokerType::ShootTheMoon => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::JokerStencil => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::FourFingers => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Mime => JokerEffectType::new(false, false, false, false, true, false),
             JokerType::CeremonialDagger => {
-                JokerEffect::new(false, true, false, false, false, false)
+                JokerEffectType::new(false, true, false, false, false, false)
             }
-            JokerType::MarbleJoker => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::LoyaltyCard => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Dusk => JokerEffect::new(false, false, false, false, true, false),
-            JokerType::Fibonacci => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::SteelJoker => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Hack => JokerEffect::new(false, false, false, false, true, false),
-            JokerType::Pareidolia => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::SpaceJoker => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Burglar => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Blackboard => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::SixthSense => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Constellation => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Hiker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::CardSharp => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Madness => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Seance => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Vampire => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Shortcut => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Hologram => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::CloudNine => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Rocket => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::MidasMask => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Luchador => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::GiftCard => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::TurtleBean => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Erosion => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::ToTheMoon => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::StoneJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::LuckyCat => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Bull => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::DietCola => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::TradingCard => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::FlashCard => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::SpareTrousers => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::Ramen => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Seltzer => JokerEffect::new(false, false, false, false, true, false),
-            JokerType::Castle => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::MrBones => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Acrobat => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::SockAndBuskin => JokerEffect::new(false, false, false, false, true, false),
-            JokerType::Troubadour => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Certificate => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::SmearedJoker => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Throwback => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::RoughGem => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Bloodstone => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Arrowhead => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::OnyxAgate => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::GlassJoker => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Showman => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::FlowerPot => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::MerryAndy => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::OopsAllSixes => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::TheIdol => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::SeeingDouble => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Matador => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Satellite => JokerEffect::new(false, false, false, false, false, true),
-            JokerType::Cartomancer => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Astronomer => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Bootstraps => JokerEffect::new(false, true, false, false, false, false),
-            JokerType::Dna => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Vagabond => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Baron => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Obelisk => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::BaseballCard => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::AncientJoker => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Campfire => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Blueprint => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::WeeJoker => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::HitTheRoad => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::TheDuo => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::TheTrio => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::TheFamily => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::TheOrder => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::TheTribe => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Stuntman => JokerEffect::new(true, false, false, false, false, false),
-            JokerType::InvisibleJoker => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Brainstorm => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::DriversLicense => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::BurntJoker => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Canio => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Triboulet => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Yorick => JokerEffect::new(false, false, true, false, false, false),
-            JokerType::Chicot => JokerEffect::new(false, false, false, true, false, false),
-            JokerType::Perkeo => JokerEffect::new(false, false, false, true, false, false),
+            JokerType::MarbleJoker => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::LoyaltyCard => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Dusk => JokerEffectType::new(false, false, false, false, true, false),
+            JokerType::Fibonacci => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::SteelJoker => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Hack => JokerEffectType::new(false, false, false, false, true, false),
+            JokerType::Pareidolia => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::SpaceJoker => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Burglar => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Blackboard => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::SixthSense => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Constellation => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::Hiker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::CardSharp => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Madness => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Seance => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Vampire => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Shortcut => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Hologram => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::CloudNine => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Rocket => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::MidasMask => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Luchador => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::GiftCard => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::TurtleBean => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Erosion => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::ToTheMoon => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::StoneJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::LuckyCat => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Bull => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::DietCola => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::TradingCard => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::FlashCard => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::SpareTrousers => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
+            JokerType::Ramen => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Seltzer => JokerEffectType::new(false, false, false, false, true, false),
+            JokerType::Castle => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::MrBones => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Acrobat => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::SockAndBuskin => {
+                JokerEffectType::new(false, false, false, false, true, false)
+            }
+            JokerType::Troubadour => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Certificate => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::SmearedJoker => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::Throwback => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::RoughGem => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Bloodstone => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Arrowhead => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::OnyxAgate => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::GlassJoker => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Showman => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::FlowerPot => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::MerryAndy => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::OopsAllSixes => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::TheIdol => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::SeeingDouble => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::Matador => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Satellite => JokerEffectType::new(false, false, false, false, false, true),
+            JokerType::Cartomancer => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Astronomer => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Bootstraps => JokerEffectType::new(false, true, false, false, false, false),
+            JokerType::Dna => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Vagabond => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Baron => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Obelisk => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::BaseballCard => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::AncientJoker => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::Campfire => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Blueprint => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::WeeJoker => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::HitTheRoad => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::TheDuo => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::TheTrio => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::TheFamily => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::TheOrder => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::TheTribe => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Stuntman => JokerEffectType::new(true, false, false, false, false, false),
+            JokerType::InvisibleJoker => {
+                JokerEffectType::new(false, false, false, true, false, false)
+            }
+            JokerType::Brainstorm => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::DriversLicense => {
+                JokerEffectType::new(false, false, true, false, false, false)
+            }
+            JokerType::BurntJoker => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Canio => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Triboulet => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Yorick => JokerEffectType::new(false, false, true, false, false, false),
+            JokerType::Chicot => JokerEffectType::new(false, false, false, true, false, false),
+            JokerType::Perkeo => JokerEffectType::new(false, false, false, true, false, false),
         }
     }
 }
 
-pub struct JokerEffect {
+pub struct JokerEffectType {
     chips: bool,
     add_mult: bool,
     mult_mult: bool,
@@ -342,7 +396,7 @@ pub struct JokerEffect {
     retrigger: bool,
     economy: bool,
 }
-impl JokerEffect {
+impl JokerEffectType {
     pub fn new(
         chips: bool,
         add_mult: bool,

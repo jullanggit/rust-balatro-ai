@@ -1,8 +1,8 @@
-use std::{env, path::PathBuf};
-
-use isahc::AsyncReadResponseExt;
+use isahc::{AsyncReadResponseExt, http::uri::Uri};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
+use std::{env, path::PathBuf, str::FromStr};
 
 #[derive(Deserialize)]
 struct OuterQuery {
@@ -23,14 +23,14 @@ struct OuterParser {
 }
 #[derive(Deserialize, Debug)]
 struct Parse {
-    properties: [serde_json::Value; 1],
+    properties: Vec<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct Parsed {
+#[derive(Deserialize, Debug)]
+struct OuterData {
     data: Vec<Data>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Data {
     r#type: String,
     data: serde_json::Value,
@@ -38,6 +38,7 @@ struct Data {
 
 fn main() {
     smol::block_on(async {
+        // get jokers
         let query: OuterQuery = isahc::get_async(
             "https://balatrogame.fandom.com/api.php?action=query&list=categorymembers&cmtitle=Category:Jokers&cmprop=title|ids&cmlimit=500&format=json",
         ).await.unwrap().json().await.unwrap();
@@ -46,12 +47,13 @@ fn main() {
             .categorymembers
             .into_iter()
             .map(|category_member| category_member.title)
-            .filter(|title| !title.contains("Category") && title != "Jokers")
-            .map(|title| title.replace(' ', "%20"))
-            .map(|title| smol::spawn(isahc::get_async(format!("https://balatrogame.fandom.com/api.php?action=parse&page={title}&prop=properties&format=json")))).collect::<Vec<_>>();
+            .filter(|title| !title.contains("Category") && title != "Jokers" && title != "Chaos Theory")
+            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json", utf8_percent_encode(&title,NON_ALPHANUMERIC).to_string()))
+            .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
 
-        let mut images_to_fetch: Vec<(smol::Task<_>, String)> = Vec::new();
+        let mut images: Vec<(smol::Task<_>, String)> = Vec::new();
 
+        // for every joker
         for query in queries {
             let parser: OuterParser = query.await.unwrap().json().await.unwrap();
             let str = parser.parse.properties[0]
@@ -59,15 +61,16 @@ fn main() {
                 .unwrap()
                 .as_str()
                 .unwrap();
-            let parsed: Parsed = serde_json::from_str(str).unwrap();
-            for data in parsed.data {
-                let mut name = None;
-                let mut rarity = None;
-                let mut buy_price: Option<u8> = None;
-                let mut sell_price: Option<u8> = None;
-                // the args to JokerEffect::new()
-                let mut r#type = None;
 
+            let mut name = None;
+            let mut rarity = None;
+            let mut buy_price: Option<u8> = None;
+            let mut sell_price: Option<u8> = None;
+            // the args to JokerEffectType::new()
+            let mut effect_type = None;
+
+            let parsed: [OuterData; 1] = serde_json::from_str(str).unwrap();
+            for data in &parsed[0].data {
                 match data.r#type.as_str() {
                     "title" => {
                         name = Some(
@@ -77,14 +80,18 @@ fn main() {
                                 .as_str()
                                 .unwrap()
                                 .replace(' ', ""),
-                        )
+                        );
                     }
                     "image" => {
-                        images_to_fetch.push((
+                        images.push((
                             smol::spawn(isahc::get_async(
-                                data.data.get("url").unwrap().as_str().unwrap(),
+                                data.data.as_array().unwrap()[0]
+                                    .get("url")
+                                    .unwrap()
+                                    .as_str()
+                                    .unwrap(),
                             )),
-                            name.unwrap(),
+                            name.clone().unwrap(),
                         ));
                     }
                     "group" => {
@@ -119,9 +126,9 @@ fn main() {
                                         "Buy Price" => {
                                             buy_price = Some(
                                                 stat.value
-                                                    .split(' ')
-                                                    .next_back()
-                                                    .unwrap()
+                                                    .chars()
+                                                    .filter(|char| char.is_numeric())
+                                                    .collect::<String>()
                                                     .parse()
                                                     .unwrap(),
                                             )
@@ -137,7 +144,7 @@ fn main() {
                                             )
                                         }
                                         "Type" => {
-                                            r#type =
+                                            effect_type =
                                                 Some(if stat.value.contains("Additive Mult") {
                                                     (false, true, false, false, false, false)
                                                 } else if stat.value.contains("Chips") {
@@ -166,7 +173,9 @@ fn main() {
                                     }
                                 }
                             }
-                            "Compatibility" => todo!(),
+                            // TODO
+                            "Compatibility" => {}
+                            // not TODO
                             "Effect" | "Unlock Requirement" => {}
                             other => panic!("{other}"),
                         }
@@ -192,10 +201,14 @@ fn main() {
                 .collect::<PathBuf>()
         };
         let assets = root_dir.join("assets");
-        fs::create_dir(&assets).await.unwrap();
-        for (image, name) in images_to_fetch {
+        let _ = fs::create_dir(&assets).await; // ignore already exists error
+        for (image, name) in images {
             let image = image.await.unwrap().bytes().await.unwrap();
-            fs::write(assets.join(name), image).await.unwrap();
+
+            let mut path = assets.join(name);
+            path.set_extension("png");
+
+            fs::write(path, image).await.unwrap();
         }
     });
 }
