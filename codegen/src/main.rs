@@ -323,7 +323,7 @@ async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
             .collect::<String>();
         writeln!(
             code,
-            "fn name(&self) -> &'static str {{ match self {{ {branches} }} }}"
+            "pub fn name(&self) -> &'static str {{ match self {{ {branches} }} }}"
         )
         .unwrap();
     }
