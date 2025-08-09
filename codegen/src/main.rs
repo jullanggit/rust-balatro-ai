@@ -1,10 +1,12 @@
 #![feature(iter_intersperse)]
+#![feature(exit_status_error)]
 
 use balatro::{JokerCompatibility, JokerEffectType};
 use isahc::AsyncReadResponseExt;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
+use std::process::Command;
 use std::{convert::Infallible, env, path::PathBuf};
 
 #[derive(Deserialize)]
@@ -95,7 +97,8 @@ fn main() {
                                 .unwrap()
                                 // rust compatibility
                                 .replace(' ', "")
-                                .replace('8', "Eight"),
+                                .replace('8', "Eight")
+                                .replace('!', ""),
                         );
                     }
                     "image" => {
@@ -288,6 +291,16 @@ fn main() {
         lib_string.replace_range(start_codegen..end_codegen, &enum_string);
 
         fs::write(&lib_path, lib_string).await.unwrap();
+
+        // format code
+        Command::new("cargo")
+            .args(["fmt", "-p", "balatro"])
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap()
+            .exit_ok()
+            .unwrap();
 
         // handle fetched assets
         let assets = root_dir.join("assets");
