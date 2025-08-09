@@ -4,12 +4,12 @@ pub struct Joker {
 }
 
 pub struct JokerEffectType {
-    chips: bool,
-    add_mult: bool,
-    mult_mult: bool,
-    effect: bool,
-    retrigger: bool,
-    economy: bool,
+    pub chips: bool,
+    pub add_mult: bool,
+    pub mult_mult: bool,
+    pub effect: bool,
+    pub retrigger: bool,
+    pub economy: bool,
 }
 impl JokerEffectType {
     pub fn new(
@@ -35,6 +35,15 @@ pub struct JokerCompatibility {
     pub copyable: bool,
     pub perishable: bool,
     pub eternal: bool,
+}
+impl JokerCompatibility {
+    pub fn new(copyable: bool, perishable: bool, eternal: bool) -> Self {
+        Self {
+            copyable,
+            perishable,
+            eternal,
+        }
+    }
 }
 
 pub enum Edition {

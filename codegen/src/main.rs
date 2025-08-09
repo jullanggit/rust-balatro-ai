@@ -1,6 +1,7 @@
 #![feature(iter_intersperse)]
 #![feature(exit_status_error)]
 #![feature(string_remove_matches)]
+#![feature(super_let)]
 
 use balatro::{JokerCompatibility, JokerEffectType};
 use isahc::AsyncReadResponseExt;
@@ -315,18 +316,38 @@ async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
     // impl block start
     writeln!(code, "impl JokerType {{").unwrap();
 
-    // name()
-    {
-        let branches = jokers
-            .iter()
-            .map(|joker| format!("Self::{} => \"{}\",", joker.name, joker.name))
-            .collect::<String>();
+    let mut match_fn = |fn_name: &str, return_type: &str, branch: fn(&CodegenJoker) -> String| {
         writeln!(
             code,
-            "pub fn name(&self) -> &'static str {{ match self {{ {branches} }} }}"
+            "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
+            jokers
+                .iter()
+                .map(|joker| format!("Self::{} => \"{}\",", joker.name, branch(joker)))
+                .collect::<String>()
         )
         .unwrap();
-    }
+    };
+
+    match_fn("name", "&'static str", |joker| joker.name.clone());
+    match_fn("rarity", "Rarity", |joker| {
+        format!("Rarity::{}", joker.rarity)
+    });
+    match_fn("buy_price", "u8", |joker| joker.buy_price.to_string());
+    match_fn("sell_price", "u8", |joker| joker.sell_price.to_string());
+    match_fn("effect_type", "JokerEffectType", |joker| {
+        let et = &joker.effect_type;
+        format!(
+            "JokerEffectType::new({}, {}, {}, {}, {}, {})",
+            et.chips, et.add_mult, et.mult_mult, et.effect, et.retrigger, et.economy
+        )
+    });
+    match_fn("compatibility", "JokerCompatibility", |joker| {
+        let c = &joker.compatibility;
+        format!(
+            "JokerCompatibility::new({}, {}, {}",
+            c.copyable, c.perishable, c.eternal
+        )
+    });
 
     // impl block end
     writeln!(code, "}}").unwrap();
