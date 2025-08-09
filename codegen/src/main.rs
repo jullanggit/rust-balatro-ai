@@ -346,7 +346,7 @@ async fn codegen(jokers: Vec<CodegenJoker>, root_dir: &Path) {
     match_fn("compatibility", "JokerCompatibility", |joker| {
         let c = &joker.compatibility;
         format!(
-            "JokerCompatibility::new({}, {}, {}",
+            "JokerCompatibility::new({}, {}, {})",
             c.copyable, c.perishable, c.eternal
         )
     });
