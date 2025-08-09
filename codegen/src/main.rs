@@ -1,3 +1,6 @@
+// Yes i know the error handling & readability is abysmal,
+// but this only really has to run once, so it should be fine
+
 #![feature(iter_intersperse)]
 #![feature(exit_status_error)]
 #![feature(string_remove_matches)]
@@ -8,10 +11,12 @@ use isahc::AsyncReadResponseExt;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
-use std::fmt::Write;
-use std::path::Path;
-use std::process::Command;
-use std::{convert::Infallible, env, path::PathBuf};
+use std::{
+    env,
+    fmt::Write,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 #[derive(Deserialize)]
 struct OuterQuery {
@@ -66,7 +71,7 @@ fn main() {
             .into_iter()
             .map(|category_member| category_member.title)
             .filter(|title| !title.contains("Category") && title != "Jokers" && title != "Chaos Theory")
-            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json", utf8_percent_encode(&title,NON_ALPHANUMERIC).to_string()))
+            .map(|title| format!("https://balatrogame.fandom.com/api.php?action=parse&page={}&prop=properties&format=json", utf8_percent_encode(&title,NON_ALPHANUMERIC)))
             .map(|uri| smol::spawn(isahc::get_async(uri))).collect::<Vec<_>>();
 
         let mut images: Vec<(smol::Task<_>, String)> = Vec::new();

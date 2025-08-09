@@ -73,6 +73,7 @@ pub struct Spectral {}
 
 pub struct Deck {}
 
+// see codegen crate
 // CODEGEN START
 pub enum JokerType {
     EightBall,
