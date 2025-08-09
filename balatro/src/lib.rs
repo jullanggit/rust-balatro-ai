@@ -416,6 +416,12 @@ impl JokerEffectType {
     }
 }
 
+pub struct JokerCompatibility {
+    pub copyable: bool,
+    pub perishable: bool,
+    pub eternal: bool,
+}
+
 pub enum Edition {
     Base,
     Foil,

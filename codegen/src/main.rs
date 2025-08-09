@@ -1,3 +1,4 @@
+use balatro::{JokerCompatibility, JokerEffectType};
 use isahc::{AsyncReadResponseExt, http::uri::Uri};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
@@ -66,8 +67,8 @@ fn main() {
             let mut rarity = None;
             let mut buy_price: Option<u8> = None;
             let mut sell_price: Option<u8> = None;
-            // the args to JokerEffectType::new()
             let mut effect_type = None;
+            let mut compatibility = None;
 
             let parsed: [OuterData; 1] = serde_json::from_str(str).unwrap();
             for data in &parsed[0].data {
@@ -146,36 +147,76 @@ fn main() {
                                         "Type" => {
                                             effect_type =
                                                 Some(if stat.value.contains("Additive Mult") {
-                                                    (false, true, false, false, false, false)
+                                                    JokerEffectType::new(
+                                                        false, true, false, false, false, false,
+                                                    )
                                                 } else if stat.value.contains("Chips") {
-                                                    (true, false, false, false, false, false)
+                                                    JokerEffectType::new(
+                                                        true, false, false, false, false, false,
+                                                    )
                                                 } else if stat.value.contains("Multiplicative Mult")
                                                 {
-                                                    (false, false, true, false, false, false)
+                                                    JokerEffectType::new(
+                                                        false, false, true, false, false, false,
+                                                    )
                                                 } else if stat
                                                     .value
                                                     .contains("Chips and Additive Mult")
                                                 {
-                                                    (true, true, false, false, false, false)
+                                                    JokerEffectType::new(
+                                                        true, true, false, false, false, false,
+                                                    )
                                                 } else if stat.value.contains("Effect") {
-                                                    (false, false, false, true, false, false)
+                                                    JokerEffectType::new(
+                                                        false, false, false, true, false, false,
+                                                    )
                                                 } else if stat.value.contains("Retrigger") {
-                                                    (false, false, false, false, true, false)
+                                                    JokerEffectType::new(
+                                                        false, false, false, false, true, false,
+                                                    )
                                                 } else if stat.value.contains("Economy") {
-                                                    (false, false, false, false, false, true)
+                                                    JokerEffectType::new(
+                                                        false, false, false, false, false, true,
+                                                    )
                                                 } else {
                                                     unreachable!()
                                                 });
                                         }
-                                        // TODO
                                         "Activation" => {}
                                         other => panic!("{other}"),
                                     }
                                 }
                             }
-                            // TODO
-                            "Compatibility" => {}
-                            // not TODO
+                            "Compatibility" => {
+                                #[derive(Deserialize)]
+                                struct Compatibility {
+                                    value: String,
+                                    source: String,
+                                }
+                                for value in &values[1..] {
+                                    let parsed_compatibility: Compatibility =
+                                        serde_json::from_value(value.data.clone()).unwrap();
+
+                                    let [mut copyable, mut perishable, mut eternal] = [None; 3];
+
+                                    let value = parsed_compatibility.value.contains("Yes");
+                                    match parsed_compatibility.source.as_str() {
+                                        "compat-copyable" => copyable = Some(value),
+                                        "compat-perishable" => perishable = Some(value),
+                                        "compat-eternal" => eternal = Some(value),
+                                        other => panic!("{other}"),
+                                    }
+
+                                    let [copyable, perishable, eternal] =
+                                        [copyable, perishable, eternal].map(Option::unwrap);
+
+                                    compatibility = Some(JokerCompatibility {
+                                        copyable,
+                                        perishable,
+                                        eternal,
+                                    })
+                                }
+                            }
                             "Effect" | "Unlock Requirement" => {}
                             other => panic!("{other}"),
                         }
