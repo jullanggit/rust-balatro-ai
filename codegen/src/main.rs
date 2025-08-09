@@ -1,5 +1,6 @@
 #![feature(iter_intersperse)]
 #![feature(exit_status_error)]
+#![feature(string_remove_matches)]
 
 use balatro::{JokerCompatibility, JokerEffectType};
 use isahc::AsyncReadResponseExt;
@@ -89,17 +90,18 @@ fn main() {
             for data in &parsed[0].data {
                 match data.r#type.as_str() {
                     "title" => {
-                        name = Some(
-                            data.data
-                                .get("value")
-                                .unwrap()
-                                .as_str()
-                                .unwrap()
-                                // rust compatibility
-                                .replace(' ', "")
-                                .replace('8', "Eight")
-                                .replace('!', ""),
-                        );
+                        let mut string = data
+                            .data
+                            .get("value")
+                            .unwrap()
+                            .as_str()
+                            .unwrap()
+                            // rust compatibility
+                            .replace('8', "Eight");
+
+                        string.remove_matches([' ', '!', '\'', '-', '.']);
+
+                        name = Some(string);
                     }
                     "image" => {
                         images.push((
@@ -277,7 +279,7 @@ fn main() {
             .map(|joker| joker.name.as_str())
             .intersperse(",")
             .collect::<String>();
-        let enum_string = format!("\nenum JokerType {{ {variants} }}");
+        let enum_string = format!("\npub enum JokerType {{ {variants} }}");
 
         // write code
         const CODEGEN_START: &str = "// CODEGEN START";
