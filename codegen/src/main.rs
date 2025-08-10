@@ -5,44 +5,50 @@
 #![feature(exit_status_error)]
 #![feature(string_remove_matches)]
 #![feature(super_let)]
+#![feature(iter_map_windows)]
 
 use balatro::{JokerCompatibility, JokerEffectType};
+use futures::future::join_all;
 use isahc::AsyncReadResponseExt;
 use parse_wiki_text::{Node, Parameter};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
 use std::{
+    convert::identity,
     env,
     fmt::Write,
     path::{Path, PathBuf},
     process::Command,
+    sync::LazyLock,
 };
+
+static ROOT_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let mut found = false;
+    env::current_dir()
+        .unwrap()
+        .iter()
+        .take_while(|part| {
+            if *part == "balatro-ai" {
+                found = true;
+                return false;
+            };
+            found
+        })
+        .collect::<PathBuf>()
+});
 
 fn main() {
     smol::block_on(async {
-        let root_dir = {
-            let mut found = false;
-            env::current_dir()
-                .unwrap()
-                .iter()
-                .take_while(|part| {
-                    if *part == "balatro-ai" {
-                        found = true;
-                        return false;
-                    };
-                    found
-                })
-                .collect::<PathBuf>()
-        };
-
         let mut code = String::new();
 
-        code.push_str(&tarots().await);
-        code.push_str(&jokers(&root_dir).await);
+        for consumable in consumables() {
+            code.push_str(&consumable.await);
+        }
+        code.push_str(&jokers().await);
 
         // write code
-        let lib_path = root_dir.join("balatro/src/lib.rs");
+        let lib_path = ROOT_DIR.join("balatro/src/lib.rs");
 
         const CODEGEN_START: &str = "// CODEGEN START";
         const CODEGEN_END: &str = "// CODEGEN END";
@@ -68,72 +74,155 @@ fn main() {
     })
 }
 
-async fn tarots() -> String {
+fn consumables() -> [impl Future<Output = String>; 3] {
+    ["Tarot", "Planet", "Spectral"].map(consumable)
+}
+
+async fn consumable(name: &str) -> String {
     #[derive(Deserialize, Debug)]
-    struct ParseWikitext {
-        parse: Wikitext,
+    struct ExpandTemplates {
+        expandtemplates: Wikitext,
     }
     #[derive(Deserialize, Debug)]
     struct Wikitext {
         wikitext: String,
     }
-    let query: ParseWikitext = isahc::get_async("https://balatrowiki.org/api.php?action=parse&page=Tarot_Cards&prop=wikitext&format=json&formatversion=2").await.unwrap().json().await.unwrap();
-    let parsed = parse_wiki_text::Configuration::default().parse(&query.parse.wikitext);
+    let query: ExpandTemplates = isahc::get_async(format!("https://balatrowiki.org/api.php?action=expandtemplates&title=Tarot_Cards&text={}&prop=wikitext&format=json", utf8_percent_encode(&format!("{{{{Consumable Table|type=1|{name} Cards}}}}"), NON_ALPHANUMERIC))).await.unwrap().json().await.unwrap();
+    let configuration = parse_wiki_text::Configuration::default();
+    let parsed = configuration.parse(&query.expandtemplates.wikitext);
 
     // get table
+    // TODO: The pattern is: Image, then relevant link
     let items = parsed
         .nodes
         .into_iter()
-        .skip_while(|node| {
-            // heading before table
-            if let Node::Heading { nodes, .. } = node
-                && let Node::Text { value, .. } = nodes[0]
-                && value == "List of Tarot Cards"
+        .map_windows(|[node_a, node_b]| {
+            if matches!(node_a, Node::Image { .. })
+                && let Node::Link { target, .. } = node_b
+                && !target.contains("Card Suits#")
             {
-                false
-            } else {
-                true
-            }
-        })
-        .find_map(|node| {
-            if let Node::UnorderedList { items, .. } = node {
-                Some(items)
+                Some(target.to_string())
             } else {
                 None
             }
         })
-        .expect("List of Tarot Cards should exist");
-
-    // extract tarot names
-    let tarot_names = items
-        .into_iter()
-        .map(|item| {
-            item.nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Node::Template {
-                        name, parameters, ..
-                    } = node
-                        // make sure its the right template
-                        && let Node::Text { value: "Tarot", .. } = name[0]
-                        // extract tarot name
-                        && let Parameter { value, .. } = &parameters[0]
-                        && let Node::Text { value, .. } = value[0]
-                    {
-                        Some(value)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap()
-        })
+        .flatten() // remove None's
         .collect::<Vec<_>>();
 
-    todo!()
+    // [buyprice, sellprice]
+    let stats = join_all(items.iter().map(|item| async {
+        #[derive(Deserialize)]
+        struct ParseWikitext {
+            parse: Wikitext,
+        }
+
+        let wikitext_string = isahc::get_async(format!(
+            "https://balatrowiki.org/api.php?action=parse&page={}&prop=wikitext&format=json&formatversion=2",
+            utf8_percent_encode(item, NON_ALPHANUMERIC)
+        ))
+        .await
+        .unwrap()
+        .json::<ParseWikitext>()
+        .await
+        .unwrap();
+
+        let parsed = configuration.parse(&wikitext_string.parse.wikitext);
+
+        let Node::Template { name, parameters, ..} = &parsed.nodes[0] else { panic!() };
+
+        assert!(matches!(name[0], Node::Text { value: "Consumable info", .. }));
+
+        parameters.iter().map_windows(|parameters| {
+            let [Parameter { name: name1,  value: value1, .. },
+                Parameter { name: name2, value: value2, .. }] = parameters;
+
+            if matches!(name1.as_deref()?[0], Node::Text { value: "buyprice", .. })
+            && matches!(name2.as_deref()?[0], Node::Text { value: "sellprice", .. }) {
+                Some([value1, value2].map(|value| {
+                    let Node::Text { value, .. } =  value[0] else { panic!() };
+                    value.parse::<u8>().unwrap()}))
+            } else {
+                None
+            }
+        }).flatten().next().unwrap()
+    }))
+    .await;
+
+    // assets
+    let assets = items
+        .iter()
+        .map(|item| {
+            (
+                smol::spawn(isahc::get_async(format!(
+                    "https://balatrowiki.org/images/{}.png",
+                    utf8_percent_encode(item, NON_ALPHANUMERIC)
+                ))),
+                item.clone(),
+            )
+        })
+        .collect();
+    handle_assets(assets).await;
+
+    consumables_codegen(name, items, stats).await
+}
+
+async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>) -> String {
+    let mut code = String::new();
+
+    let variants = names
+        .iter()
+        .map(|item| sanitize_variant_name(item))
+        .collect::<Vec<_>>();
+
+    // enum definition
+    {
+        let variants = variants
+            .iter()
+            .map(AsRef::as_ref)
+            .intersperse(",")
+            .collect::<String>();
+        writeln!(code, "\npub enum {name} {{ {variants} }}").unwrap();
+    }
+    // impl block start
+    writeln!(code, "impl {name} {{").unwrap();
+
+    let mut match_fn = |fn_name: &str, return_type: &str, branch: fn(&str, [u8; 2]) -> String| {
+        writeln!(
+            code,
+            "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
+            variants
+                .iter()
+                .zip(&names)
+                .zip(&stats)
+                .map(|((variant, name), stat)| format!(
+                    "Self::{} => {},",
+                    variant,
+                    branch(name, *stat)
+                ))
+                .collect::<String>()
+        )
+        .unwrap();
+    };
+
+    match_fn("name", "&'static str", |name, _| format!("\"{}\"", name));
+    match_fn("buy_price", "u8", |_, [price, _]| price.to_string());
+    match_fn("sell_price", "u8", |_, [_, price]| price.to_string());
+
+    // impl block end
+    writeln!(code, "}}").unwrap();
+
+    code
+}
+
+fn sanitize_variant_name(name: &str) -> String {
+    let mut string = name.replace('8', "Eight");
+    string.remove_matches([' ', '!', '\'', '-', '.']);
+    string
 }
 
 struct CodegenJoker {
-    name: String,
+    variant_name: String,
+    actual_name: String,
     rarity: &'static str,
     buy_price: u8,
     sell_price: u8,
@@ -141,7 +230,7 @@ struct CodegenJoker {
     compatibility: JokerCompatibility,
 }
 
-async fn jokers(root_dir: &Path) -> String {
+async fn jokers() -> String {
     #[derive(Deserialize)]
     struct OuterQuery {
         query: Query,
@@ -200,7 +289,8 @@ async fn jokers(root_dir: &Path) -> String {
         let parser: OuterParser = query.await.unwrap().json().await.unwrap();
         let str = parser.parse.properties.infoboxes;
 
-        let mut name = None;
+        let mut variant_name = None;
+        let mut actual_name = None;
         let mut rarity = None;
         let mut buy_price: Option<u8> = None;
         let mut sell_price: Option<u8> = None;
@@ -211,18 +301,10 @@ async fn jokers(root_dir: &Path) -> String {
         for data in &parsed[0].data {
             match data.r#type.as_str() {
                 "title" => {
-                    let mut string = data
-                        .data
-                        .get("value")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        // rust compatibility
-                        .replace('8', "Eight");
+                    let string = data.data.get("value").unwrap().as_str().unwrap();
 
-                    string.remove_matches([' ', '!', '\'', '-', '.']);
-
-                    name = Some(string);
+                    variant_name = Some(sanitize_variant_name(string));
+                    actual_name = Some(string.to_string());
                 }
                 "image" => {
                     images.push((
@@ -233,7 +315,7 @@ async fn jokers(root_dir: &Path) -> String {
                                 .as_str()
                                 .unwrap(),
                         )),
-                        name.clone().unwrap(),
+                        actual_name.clone().unwrap(),
                     ));
                 }
                 "group" => {
@@ -363,7 +445,8 @@ async fn jokers(root_dir: &Path) -> String {
         }
 
         jokers.push(CodegenJoker {
-            name: name.unwrap(),
+            variant_name: variant_name.unwrap(),
+            actual_name: actual_name.unwrap(),
             rarity: rarity.unwrap(),
             buy_price: buy_price.unwrap(),
             sell_price: sell_price.unwrap(),
@@ -373,7 +456,7 @@ async fn jokers(root_dir: &Path) -> String {
     }
 
     let string = jokers_codegen(jokers).await;
-    handle_assets(images, root_dir).await;
+    handle_assets(images).await;
 
     string
 }
@@ -385,9 +468,8 @@ async fn handle_assets(
         smol::Task<Result<isahc::Response<isahc::AsyncBody>, isahc::Error>>,
         String,
     )>,
-    root_dir: &Path,
 ) {
-    let assets = root_dir.join("assets");
+    let assets = ROOT_DIR.join("assets");
     let _ = fs::create_dir(&assets).await; // ignore already exists error
     for (image, name) in images {
         let image = image.await.unwrap().bytes().await.unwrap();
@@ -406,7 +488,7 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
     {
         let variants = jokers
             .iter()
-            .map(|joker| joker.name.as_str())
+            .map(|joker| joker.variant_name.as_str())
             .intersperse(",")
             .collect::<String>();
         writeln!(code, "\npub enum JokerType {{ {variants} }}").unwrap();
@@ -420,14 +502,14 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
             "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
             jokers
                 .iter()
-                .map(|joker| format!("Self::{} => {},", joker.name, branch(joker)))
+                .map(|joker| format!("Self::{} => {},", joker.variant_name, branch(joker)))
                 .collect::<String>()
         )
         .unwrap();
     };
 
     match_fn("name", "&'static str", |joker| {
-        format!("\"{}\"", joker.name)
+        format!("\"{}\"", joker.actual_name)
     });
     match_fn("rarity", "Rarity", |joker| {
         format!("Rarity::{}", joker.rarity)
