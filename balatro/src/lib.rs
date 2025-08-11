@@ -3,7 +3,48 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
+use crate::stackvec::StackVec;
+
 pub mod stackvec;
+
+const MAX_CONSUMABLES: usize = 25;
+const MAX_DECK_CARDS: usize = 100;
+const MAX_JOKERS: usize = 15;
+const MAX_HAND_CARDS: usize = 20;
+const MAX_TAGS: usize = 20;
+const MAX_SHOP_CARDS: usize = 4;
+const MAX_SHOP_VOUCHERS: usize = 5;
+const MAX_SHOP_PACKS: usize = 2;
+const MAX_PACK_ITEMS: usize = 5;
+
+pub struct Game {}
+impl Game {
+    pub fn execute_action(&mut self, action: Action) {}
+}
+
+pub enum Action {
+    SelectBlind,
+    SkipBlind,
+    RerollBossBlind,
+    /// Play the hand containing the cards at the indices contained in the vec, in the order of the vec
+    PlayHand(StackVec<usize, MAX_HAND_CARDS>),
+    /// Discard the hand containing the cards at the indices contained in the vec
+    DiscardHand(StackVec<usize, MAX_HAND_CARDS>),
+    /// [current, new]
+    MoveJoker([usize; 2]),
+    SellJoker(usize),
+    /// [consumable index, hand cards to operate on (in the order present in the vec)]
+    UseConsumable(usize, StackVec<usize, MAX_HAND_CARDS>),
+    SellConsumable(usize),
+    BuyShopCard(usize),
+    RedeemVoucher(usize),
+    OpenPack(usize),
+    Reroll,
+    NextRound,
+    ChoosePackItem(StackVec<usize, MAX_PACK_ITEMS>),
+    SkipPack,
+}
+
 pub trait Price {
     fn buy_price(&self) -> u8;
     fn sell_price(&self) -> u8;
