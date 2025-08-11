@@ -1,3 +1,12 @@
+pub trait Price {
+    fn buy_price(&self) -> u8;
+    fn sell_price(&self) -> u8;
+}
+
+pub trait Name {
+    fn name(&self) -> &'static str;
+}
+
 pub struct Joker {
     joker_type: JokerType,
     edition: Edition,

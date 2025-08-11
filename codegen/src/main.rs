@@ -187,10 +187,11 @@ async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>
             .collect::<String>();
         writeln!(code, "\npub enum {name} {{ {variants} }}").unwrap();
     }
-    // impl block start
-    writeln!(code, "impl {name} {{").unwrap();
 
-    let mut match_fn = |fn_name: &str, return_type: &str, branch: fn(&str, [u8; 2]) -> String| {
+    let match_fn = |code: &mut String,
+                    fn_name: &str,
+                    return_type: &str,
+                    branch: fn(&str, [u8; 2]) -> String| {
         writeln!(
             code,
             "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
@@ -208,11 +209,25 @@ async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>
         .unwrap();
     };
 
-    match_fn("name", "&'static str", |name, _| format!("\"{}\"", name));
-    match_fn("buy_price", "u8", |_, [price, _]| price.to_string());
-    match_fn("sell_price", "u8", |_, [_, price]| price.to_string());
+    // impl Name
+    writeln!(code, "impl Name for {name} {{").unwrap();
 
-    // impl block end
+    match_fn(&mut code, "name", "&'static str", |name, _| {
+        format!("\"{}\"", name)
+    });
+
+    writeln!(code, "}}").unwrap();
+
+    // impl Price
+    writeln!(code, "impl Price for {name} {{").unwrap();
+
+    match_fn(&mut code, "buy_price", "u8", |_, [price, _]| {
+        price.to_string()
+    });
+    match_fn(&mut code, "sell_price", "u8", |_, [_, price]| {
+        price.to_string()
+    });
+
     writeln!(code, "}}").unwrap();
 
     code
@@ -497,10 +512,11 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
             .collect::<String>();
         writeln!(code, "\npub enum JokerType {{ {variants} }}").unwrap();
     }
-    // impl block start
-    writeln!(code, "impl JokerType {{").unwrap();
 
-    let mut match_fn = |fn_name: &str, return_type: &str, branch: fn(&CodegenJoker) -> String| {
+    let mut match_fn = |code: &mut String,
+                        fn_name: &str,
+                        return_type: &str,
+                        branch: fn(&CodegenJoker) -> String| {
         writeln!(
             code,
             "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
@@ -512,22 +528,20 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
         .unwrap();
     };
 
-    match_fn("name", "&'static str", |joker| {
-        format!("\"{}\"", joker.actual_name)
-    });
-    match_fn("rarity", "Rarity", |joker| {
+    // impl block start
+    writeln!(code, "impl JokerType {{").unwrap();
+
+    match_fn(&mut code, "rarity", "Rarity", |joker| {
         format!("Rarity::{}", joker.rarity)
     });
-    match_fn("buy_price", "u8", |joker| joker.buy_price.to_string());
-    match_fn("sell_price", "u8", |joker| joker.sell_price.to_string());
-    match_fn("effect_type", "JokerEffectType", |joker| {
+    match_fn(&mut code, "effect_type", "JokerEffectType", |joker| {
         let et = &joker.effect_type;
         format!(
             "JokerEffectType::new({}, {}, {}, {}, {}, {})",
             et.chips, et.add_mult, et.mult_mult, et.effect, et.retrigger, et.economy
         )
     });
-    match_fn("compatibility", "JokerCompatibility", |joker| {
+    match_fn(&mut code, "compatibility", "JokerCompatibility", |joker| {
         let c = &joker.compatibility;
         format!(
             "JokerCompatibility::new({}, {}, {})",
@@ -536,6 +550,27 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
     });
 
     // impl block end
+    writeln!(code, "}}").unwrap();
+
+    // impl Name
+    writeln!(code, "impl Name for JokerType {{").unwrap();
+
+    match_fn(&mut code, "name", "&'static str", |joker| {
+        format!("\"{}\"", joker.actual_name)
+    });
+
+    writeln!(code, "}}").unwrap();
+
+    // impl Price
+    writeln!(code, "impl Name for JokerType {{").unwrap();
+
+    match_fn(&mut code, "buy_price", "u8", |joker| {
+        joker.buy_price.to_string()
+    });
+    match_fn(&mut code, "sell_price", "u8", |joker| {
+        joker.sell_price.to_string()
+    });
+
     writeln!(code, "}}").unwrap();
 
     code
