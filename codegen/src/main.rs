@@ -137,10 +137,18 @@ async fn consumable(name: &str) -> String {
                 Parameter { name: name2, value: value2, .. }] = parameters;
 
             if matches!(name1.as_deref()?[0], Node::Text { value: "buyprice", .. })
-            && matches!(name2.as_deref()?[0], Node::Text { value: "sellprice", .. }) {
-                Some([value1, value2].map(|value| {
+            {
+                let extract_value = |value: &Vec<Node>| -> u8 {
                     let Node::Text { value, .. } =  value[0] else { panic!() };
-                    value.parse::<u8>().unwrap()}))
+                    value.parse::<u8>().unwrap()
+                };
+                let value1 = extract_value(value1);
+                let value2 = if matches!(name2.as_deref()?[0], Node::Text { value: "sellprice", .. }) {
+                    extract_value(value2)
+                } else {
+                    value1/2
+                };
+                Some([value1, value2])
             } else {
                 None
             }
