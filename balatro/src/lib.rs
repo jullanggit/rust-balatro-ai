@@ -1,3 +1,7 @@
+#![feature(maybe_uninit_uninit_array_transpose)]
+#![feature(maybe_uninit_slice)]
+
+pub mod stackvec;
 pub trait Price {
     fn buy_price(&self) -> u8;
     fn sell_price(&self) -> u8;
