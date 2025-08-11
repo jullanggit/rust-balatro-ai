@@ -14,14 +14,7 @@ use parse_wiki_text::{Node, Parameter};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use smol::fs;
-use std::{
-    convert::identity,
-    env,
-    fmt::Write,
-    path::{Path, PathBuf},
-    process::Command,
-    sync::LazyLock,
-};
+use std::{env, fmt::Write, path::PathBuf, process::Command, sync::LazyLock};
 
 static ROOT_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     let mut found = false;
@@ -166,7 +159,7 @@ async fn consumable(name: &str) -> String {
             (
                 smol::spawn(isahc::get_async(format!(
                     "https://balatrowiki.org/images/{}.png",
-                    utf8_percent_encode(item, NON_ALPHANUMERIC)
+                    utf8_percent_encode(&item.replace(' ', "_"), NON_ALPHANUMERIC)
                 ))),
                 item.clone(),
             )
