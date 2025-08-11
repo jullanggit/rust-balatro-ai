@@ -67,7 +67,26 @@ pub enum Consumable {
     Spectral(Spectral),
 }
 
-pub struct Deck {}
+macro_rules! Deck {
+    ($($name:ident),+) => {
+        use std::stringify;
+        pub enum Deck {
+            $($name),+
+        }
+        impl Deck {
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$name => concat!(stringify!($name), " Deck")),+
+                }
+            }
+        }
+    };
+}
+
+Deck!(
+    Red, Blue, Yellow, Green, Black, Magic, Nebula, Ghost, Abandoned, Checkered, Zodiac, Painted,
+    Anaglyph, Plasma, Erratic
+);
 
 // see codegen crate
 // CODEGEN START
