@@ -128,9 +128,12 @@ async fn consumable(name: &str) -> String {
 
         let parsed = configuration.parse(&wikitext_string.parse.wikitext);
 
-        let Node::Template { name, parameters, ..} = &parsed.nodes[0] else { panic!() };
-
-        assert!(matches!(name[0], Node::Text { value: "Consumable info", .. }));
+        let parameters = &parsed.nodes.iter().find_map(|node| if let Node::Template { name, parameters, .. } = node
+            && let Node::Text{value: "Consumable info", ..} = name[0] {
+                Some(parameters)
+        } else {
+            None
+        }).unwrap();
 
         parameters.iter().map_windows(|parameters| {
             let [Parameter { name: name1,  value: value1, .. },
@@ -140,7 +143,7 @@ async fn consumable(name: &str) -> String {
             {
                 let extract_value = |value: &Vec<Node>| -> u8 {
                     let Node::Text { value, .. } =  value[0] else { panic!() };
-                    value.parse::<u8>().unwrap()
+                    value.split(' ').next().unwrap().parse::<u8>().unwrap()
                 };
                 let value1 = extract_value(value1);
                 let value2 = if matches!(name2.as_deref()?[0], Node::Text { value: "sellprice", .. }) {
