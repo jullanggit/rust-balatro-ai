@@ -7,6 +7,7 @@ use core::{
 // Invariants:
 // 1. len is always less than CAPACITY
 // 2. all elements of array < len are initialized
+#[derive(Debug)]
 pub struct StackVec<T, const CAPACITY: usize> {
     len: usize,
     array: [MaybeUninit<T>; CAPACITY],
@@ -47,6 +48,18 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
 impl<T, const CAPACITY: usize> Default for StackVec<T, CAPACITY> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T, const CAPACITY: usize> Clone for StackVec<T, CAPACITY>
+where
+    T: Copy,
+{
+    fn clone(&self) -> Self {
+        Self {
+            len: self.len,
+            array: self.array.clone(),
+        }
     }
 }
 

@@ -3,6 +3,8 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
+use thiserror::Error;
+
 use crate::stackvec::StackVec;
 
 pub mod stackvec;
@@ -19,12 +21,57 @@ const MAX_PACK_ITEMS: usize = 5;
 
 pub struct Game {
     state: GameState,
-    deck: Deck,
+    deck: Option<Deck>,
+    stake: Option<Stake>,
 }
 impl Game {
-    pub fn execute_action(&mut self, action: Action) {}
+    pub fn execute_action(&mut self, action: Action) -> Result<(), ExecuteActionError> {
+        match action {
+            Action::SelectDeck(deck) => {
+                if self.state != GameState::SelectingDeck {
+                    return Err(ExecuteActionError::InvalidActionForState);
+                } else {
+                    self.deck = Some(deck)
+                }
+            }
+            Action::SelectStake(stake) => {
+                if self.state != GameState::SelectingStake {
+                    return Err(ExecuteActionError::NotSelectingStake);
+                } else {
+                    self.stake = Some(stake)
+                }
+            }
+            Action::SelectBlind => todo!(),
+            Action::SkipBlind => todo!(),
+            Action::RerollBossBlind => todo!(),
+            Action::PlayHand(stack_vec) => todo!(),
+            Action::DiscardHand(stack_vec) => todo!(),
+            Action::MoveJoker(_) => todo!(),
+            Action::SellJoker(_) => todo!(),
+            Action::UseConsumable(_, stack_vec) => todo!(),
+            Action::SellConsumable(_) => todo!(),
+            Action::BuyShopCard(_) => todo!(),
+            Action::RedeemVoucher(_) => todo!(),
+            Action::OpenPack(_) => todo!(),
+            Action::Reroll => todo!(),
+            Action::NextRound => todo!(),
+            Action::ChoosePackItem(stack_vec) => todo!(),
+            Action::SkipPack => todo!(),
+        }
+
+        Ok(())
+    }
 }
 
+#[derive(Error, Debug)]
+pub enum ExecuteActionError {
+    #[error("Tried to use invalid action for state")]
+    InvalidActionForState,
+    #[error("Tried to select stake outside of SelectingStake State")]
+    NotSelectingStake,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum GameState {
     SelectingDeck,
     SelectingStake,
@@ -35,14 +82,25 @@ pub enum GameState {
 }
 
 // TODO
+#[derive(Debug, PartialEq)]
 pub struct InRoundState {}
+
+// TODO
+#[derive(Debug, PartialEq)]
 pub struct CashingOutState {}
+
+// TODO
+#[derive(Debug, PartialEq)]
 pub struct InShopState {}
+
+// TODO
+#[derive(Debug, PartialEq)]
 pub struct PackState {}
 
+#[derive(Debug)]
 pub enum Action {
-    SelectDeck(usize),
-    SelectStake(usize),
+    SelectDeck(Deck),
+    SelectStake(Stake),
     SelectBlind,
     SkipBlind,
     RerollBossBlind,
@@ -146,6 +204,8 @@ pub enum Consumable {
 macro_rules! Deck {
     ($($name:ident),+) => {
         use core::stringify;
+
+        #[derive(Debug)]
         pub enum Deck {
             $($name),+
         }
@@ -163,6 +223,10 @@ Deck!(
     Red, Blue, Yellow, Green, Black, Magic, Nebula, Ghost, Abandoned, Checkered, Zodiac, Painted,
     Anaglyph, Plasma, Erratic
 );
+
+// TODO
+#[derive(Debug)]
+pub enum Stake {}
 
 // see codegen crate
 // CODEGEN START
