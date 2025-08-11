@@ -1,3 +1,5 @@
+// no_std to make running on the gpu possible in the future
+#![no_std]
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
@@ -82,7 +84,7 @@ pub enum Consumable {
 
 macro_rules! Deck {
     ($($name:ident),+) => {
-        use std::stringify;
+        use core::stringify;
         pub enum Deck {
             $($name),+
         }
