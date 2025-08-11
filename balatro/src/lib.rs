@@ -3,6 +3,8 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
+use core::mem::{self};
+
 use thiserror::Error;
 
 use crate::stackvec::StackVec;
@@ -19,47 +21,87 @@ const MAX_SHOP_VOUCHERS: usize = 5;
 const MAX_SHOP_PACKS: usize = 2;
 const MAX_PACK_ITEMS: usize = 5;
 
-pub struct Game {
-    state: GameState,
-    deck: Option<Deck>,
-    stake: Option<Stake>,
-}
-impl Game {
+impl GameState {
     pub fn execute_action(&mut self, action: Action) -> Result<(), ExecuteActionError> {
-        match action {
-            Action::SelectDeck(deck) => {
-                if self.state != GameState::SelectingDeck {
-                    return Err(ExecuteActionError::InvalidActionForState);
-                } else {
-                    self.deck = Some(deck)
-                }
-            }
-            Action::SelectStake(stake) => {
-                if self.state != GameState::SelectingStake {
-                    return Err(ExecuteActionError::NotSelectingStake);
-                } else {
-                    self.stake = Some(stake)
-                }
-            }
-            Action::SelectBlind => todo!(),
-            Action::SkipBlind => todo!(),
-            Action::RerollBossBlind => todo!(),
-            Action::PlayHand(stack_vec) => todo!(),
-            Action::DiscardHand(stack_vec) => todo!(),
-            Action::MoveJoker(_) => todo!(),
-            Action::SellJoker(_) => todo!(),
-            Action::UseConsumable(_, stack_vec) => todo!(),
-            Action::SellConsumable(_) => todo!(),
-            Action::BuyShopCard(_) => todo!(),
-            Action::RedeemVoucher(_) => todo!(),
-            Action::OpenPack(_) => todo!(),
-            Action::Reroll => todo!(),
-            Action::NextRound => todo!(),
-            Action::ChoosePackItem(stack_vec) => todo!(),
-            Action::SkipPack => todo!(),
-        }
+        // take temporary ownership of self, will be released at the end of the function
+        let mut state = mem::take(self);
 
-        Ok(())
+        let res = 'res: {
+            match action {
+                Action::SelectDeck(deck) => {
+                    if let GameState::SelectingDeck = state {
+                        state = GameState::SelectingStake(deck);
+                    } else {
+                        break 'res Err(ExecuteActionError::InvalidActionForState);
+                    }
+                }
+                Action::SelectStake(stake) => {
+                    match state {
+                        Self::SelectingStake(deck) => {
+                            state = GameState::SelectingBlind(SelectingBlind {
+                                in_game: InGame {
+                                    deck,
+                                    stake,
+                                    blind_progress: BlindProgress::Small,
+                                    boss_blind: BossBlind::Boss,
+                                    tags: [Tag::Uncommon; 2],
+                                    money: 4,
+                                    // TODO: adjust based on decks
+                                    hands: 4,
+                                    discards: 3,
+                                },
+                                pack: None,
+                            });
+                        }
+                        _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    }
+                }
+                Action::SelectBlind => match state {
+                    // disallow selecting blind while opening pack
+                    Self::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
+                        break 'res Err(ExecuteActionError::OpeningPack);
+                    }
+                    Self::SelectingBlind(SelectingBlind { mut in_game, .. }) => {
+                        // advance blind progress and enter round
+                        in_game.blind_progress.advance();
+                        state = GameState::InRound(InRound { in_game });
+                    }
+                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                },
+                Action::SkipBlind => match state {
+                    // disallow skipping blind while opening pack
+                    Self::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
+                        break 'res Err(ExecuteActionError::OpeningPack);
+                    }
+                    Self::SelectingBlind(SelectingBlind {
+                        ref mut in_game, ..
+                    }) => {
+                        in_game.blind_progress.advance();
+                    }
+                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                },
+                Action::RerollBossBlind => todo!(),
+                Action::PlayHand(stack_vec) => todo!(),
+                Action::DiscardHand(stack_vec) => todo!(),
+                Action::MoveJoker(_) => todo!(),
+                Action::SellJoker(_) => todo!(),
+                Action::UseConsumable(_, stack_vec) => todo!(),
+                Action::SellConsumable(_) => todo!(),
+                Action::BuyShopCard(_) => todo!(),
+                Action::RedeemVoucher(_) => todo!(),
+                Action::OpenPack(_) => todo!(),
+                Action::Reroll => todo!(),
+                Action::NextRound => todo!(),
+                Action::ChoosePackItem(stack_vec) => todo!(),
+                Action::SkipPack => todo!(),
+            }
+
+            Ok(())
+        };
+
+        // give back ownership
+        *self = state;
+        res
     }
 }
 
@@ -67,31 +109,54 @@ impl Game {
 pub enum ExecuteActionError {
     #[error("Tried to use invalid action for state")]
     InvalidActionForState,
-    #[error("Tried to select stake outside of SelectingStake State")]
-    NotSelectingStake,
+    #[error("Tried to take non-pack action while opening pack")]
+    OpeningPack,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default)]
 pub enum GameState {
+    #[default]
     SelectingDeck,
-    SelectingStake,
-    SelectingBlind(Option<PackState>),
-    InRound(InRoundState),
-    CashingOut(CashingOutState),
-    InShop(InShopState, Option<PackState>),
+    SelectingStake(Deck),
+    SelectingBlind(SelectingBlind),
+    InRound(InRound),
+    CashingOut(CashingOut),
+    InShop(InShop),
 }
-
-// TODO
-#[derive(Debug, PartialEq)]
-pub struct InRoundState {}
-
-// TODO
-#[derive(Debug, PartialEq)]
-pub struct CashingOutState {}
-
-// TODO
-#[derive(Debug, PartialEq)]
-pub struct InShopState {}
+/// State that is present during blind selection
+#[derive(Debug)]
+struct SelectingBlind {
+    in_game: InGame,
+    pack: Option<PackState>,
+}
+/// State that is present in a round
+#[derive(Debug)]
+struct InRound {
+    in_game: InGame,
+}
+/// State that is present while cashing out
+#[derive(Debug)]
+struct CashingOut {
+    in_game: InGame,
+}
+/// State that is present in the Shop
+#[derive(Debug)]
+struct InShop {
+    in_game: InGame,
+    pack: Option<PackState>,
+}
+/// State that is present after selecting Blind and Stake
+#[derive(Debug)]
+struct InGame {
+    deck: Deck,
+    stake: Stake,
+    blind_progress: BlindProgress,
+    boss_blind: BossBlind,
+    tags: [Tag; 2],
+    money: u8,
+    hands: u8,
+    discards: u8,
+}
 
 // TODO
 #[derive(Debug, PartialEq)]
@@ -209,8 +274,8 @@ macro_rules! Deck {
         pub enum Deck {
             $($name),+
         }
-        impl Deck {
-            pub fn name(&self) -> &'static str {
+        impl Name for Deck {
+            fn name(&self) -> &'static str {
                 match self {
                     $(Self::$name => concat!(stringify!($name), " Deck")),+
                 }
@@ -227,6 +292,35 @@ Deck!(
 // TODO
 #[derive(Debug)]
 pub enum Stake {}
+
+#[derive(Debug)]
+pub enum BlindProgress {
+    Small,
+    Big,
+    Boss,
+}
+impl BlindProgress {
+    // TODO: also advance stake
+    fn advance(&mut self) {
+        *self = match self {
+            Self::Small => Self::Big,
+            Self::Big => Self::Boss,
+            Self::Boss => Self::Small,
+        };
+    }
+}
+
+// TODO: remove `Boss`, add different boss blinds
+#[derive(Debug)]
+enum BossBlind {
+    Boss,
+}
+
+// TODO: Add other tags
+#[derive(Debug, Clone, Copy)]
+pub enum Tag {
+    Uncommon,
+}
 
 // see codegen crate
 // CODEGEN START
