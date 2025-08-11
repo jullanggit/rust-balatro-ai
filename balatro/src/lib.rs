@@ -17,12 +17,32 @@ const MAX_SHOP_VOUCHERS: usize = 5;
 const MAX_SHOP_PACKS: usize = 2;
 const MAX_PACK_ITEMS: usize = 5;
 
-pub struct Game {}
+pub struct Game {
+    state: GameState,
+    deck: Deck,
+}
 impl Game {
     pub fn execute_action(&mut self, action: Action) {}
 }
 
+pub enum GameState {
+    SelectingDeck,
+    SelectingStake,
+    SelectingBlind(Option<PackState>),
+    InRound(InRoundState),
+    CashingOut(CashingOutState),
+    InShop(InShopState, Option<PackState>),
+}
+
+// TODO
+pub struct InRoundState {}
+pub struct CashingOutState {}
+pub struct InShopState {}
+pub struct PackState {}
+
 pub enum Action {
+    SelectDeck(usize),
+    SelectStake(usize),
     SelectBlind,
     SkipBlind,
     RerollBossBlind,
