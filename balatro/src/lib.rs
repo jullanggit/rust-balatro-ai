@@ -67,10 +67,6 @@ pub enum Consumable {
     Spectral(Spectral),
 }
 
-pub struct Tarot {}
-pub struct Planet {}
-pub struct Spectral {}
-
 pub struct Deck {}
 
 // see codegen crate
