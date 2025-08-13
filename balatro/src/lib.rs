@@ -42,13 +42,14 @@ impl GameState {
                                     stake,
                                     blind_progress: BlindProgress::Small,
                                     boss_blind: BossBlind::Boss,
-                                    tags: [Tag::Uncommon; 2],
+                                    blind_tags: [Tag::Uncommon; 2],
                                     money: 4,
                                     // TODO: adjust based on decks
                                     hands: 4,
                                     discards: 3,
                                     jokers: StackVec::new(),
                                     consumables: StackVec::new(),
+                                    tags_to_use: StackVec::new(),
                                 },
                                 pack: None,
                             });
@@ -145,39 +146,40 @@ pub enum GameState {
 }
 /// State that is present during blind selection
 #[derive(Debug)]
-struct SelectingBlind {
+pub struct SelectingBlind {
     in_game: InGame,
     pack: Option<PackState>,
 }
 /// State that is present in a round
 #[derive(Debug)]
-struct InRound {
+pub struct InRound {
     in_game: InGame,
 }
 /// State that is present while cashing out
 #[derive(Debug)]
-struct CashingOut {
+pub struct CashingOut {
     in_game: InGame,
 }
 /// State that is present in the Shop
 #[derive(Debug)]
-struct InShop {
+pub struct InShop {
     in_game: InGame,
     pack: Option<PackState>,
 }
 /// State that is present after selecting Blind and Stake
 #[derive(Debug)]
-struct InGame {
+pub struct InGame {
     deck: Deck,
     stake: Stake,
     blind_progress: BlindProgress,
     boss_blind: BossBlind,
-    tags: [Tag; 2],
+    blind_tags: [Tag; 2],
     money: u8,
     hands: u8,
     discards: u8,
     jokers: StackVec<Joker, MAX_JOKERS>,
     consumables: StackVec<Consumable, MAX_CONSUMABLES>,
+    tags_to_use: StackVec<Tag, MAX_TAGS>,
 }
 
 // TODO

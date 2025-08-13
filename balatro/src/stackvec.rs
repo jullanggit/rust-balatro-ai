@@ -58,7 +58,7 @@ where
     fn clone(&self) -> Self {
         Self {
             len: self.len,
-            array: self.array.clone(),
+            array: self.array,
         }
     }
 }
