@@ -185,7 +185,7 @@ async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>
             .map(AsRef::as_ref)
             .intersperse(",")
             .collect::<String>();
-        writeln!(code, "\npub enum {name} {{ {variants} }}").unwrap();
+        writeln!(code, "\n#[derive(Debug)]\npub enum {name} {{ {variants} }}").unwrap();
     }
 
     let match_fn = |code: &mut String,
@@ -194,7 +194,7 @@ async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>
                     branch: fn(&str, [u8; 2]) -> String| {
         writeln!(
             code,
-            "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
+            "fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
             variants
                 .iter()
                 .zip(&names)
@@ -510,16 +510,22 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
             .map(|joker| joker.variant_name.as_str())
             .intersperse(",")
             .collect::<String>();
-        writeln!(code, "\npub enum JokerType {{ {variants} }}").unwrap();
+        writeln!(
+            code,
+            "\n#[derive(Debug)]\npub enum JokerType {{ {variants} }}"
+        )
+        .unwrap();
     }
 
     let mut match_fn = |code: &mut String,
+                        public: bool,
                         fn_name: &str,
                         return_type: &str,
                         branch: fn(&CodegenJoker) -> String| {
         writeln!(
             code,
-            "pub fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
+            "{} fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",
+            if public { "pub" } else { "" },
             jokers
                 .iter()
                 .map(|joker| format!("Self::{} => {},", joker.variant_name, branch(joker)))
@@ -531,23 +537,29 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
     // impl block start
     writeln!(code, "impl JokerType {{").unwrap();
 
-    match_fn(&mut code, "rarity", "Rarity", |joker| {
+    match_fn(&mut code, true, "rarity", "Rarity", |joker| {
         format!("Rarity::{}", joker.rarity)
     });
-    match_fn(&mut code, "effect_type", "JokerEffectType", |joker| {
+    match_fn(&mut code, true, "effect_type", "JokerEffectType", |joker| {
         let et = &joker.effect_type;
         format!(
             "JokerEffectType::new({}, {}, {}, {}, {}, {})",
             et.chips, et.add_mult, et.mult_mult, et.effect, et.retrigger, et.economy
         )
     });
-    match_fn(&mut code, "compatibility", "JokerCompatibility", |joker| {
-        let c = &joker.compatibility;
-        format!(
-            "JokerCompatibility::new({}, {}, {})",
-            c.copyable, c.perishable, c.eternal
-        )
-    });
+    match_fn(
+        &mut code,
+        true,
+        "compatibility",
+        "JokerCompatibility",
+        |joker| {
+            let c = &joker.compatibility;
+            format!(
+                "JokerCompatibility::new({}, {}, {})",
+                c.copyable, c.perishable, c.eternal
+            )
+        },
+    );
 
     // impl block end
     writeln!(code, "}}").unwrap();
@@ -555,19 +567,19 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
     // impl Name
     writeln!(code, "impl Name for JokerType {{").unwrap();
 
-    match_fn(&mut code, "name", "&'static str", |joker| {
+    match_fn(&mut code, false, "name", "&'static str", |joker| {
         format!("\"{}\"", joker.actual_name)
     });
 
     writeln!(code, "}}").unwrap();
 
     // impl Price
-    writeln!(code, "impl Name for JokerType {{").unwrap();
+    writeln!(code, "impl Price for JokerType {{").unwrap();
 
-    match_fn(&mut code, "buy_price", "u8", |joker| {
+    match_fn(&mut code, false, "buy_price", "u8", |joker| {
         joker.buy_price.to_string()
     });
-    match_fn(&mut code, "sell_price", "u8", |joker| {
+    match_fn(&mut code, false, "sell_price", "u8", |joker| {
         joker.sell_price.to_string()
     });
 
