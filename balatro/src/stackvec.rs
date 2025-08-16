@@ -1,6 +1,7 @@
 use core::{
     mem::MaybeUninit,
     ops::{Index, IndexMut, Range},
+    ptr,
 };
 
 /// A no-std vector type around an array, with push/pop functionality
@@ -42,6 +43,24 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
         // SAFETY:
         // `element` is element self.len - 1 and according to Invariant 2. all elements < self.len are initialized
         Some(unsafe { element.assume_init_read() })
+    }
+    /// Removes and returns the element at `index`, shifting all subsequent elements to the left. Returns none if index is out of bounds.
+    pub fn remove(&mut self, index: usize) -> Option<T> {
+        let removed = self.get_mut(index)?;
+        let removed_ptr = removed as *mut T;
+        // SAFETY
+        // - `removed` is a &mut T and is thus properly aligned and initialized
+        // - we will overwrite the location in the next step, so it will not be double-dropped
+        let value = unsafe { ptr::read(removed_ptr) };
+
+        // shift everything down
+        unsafe {
+            ptr::copy(removed_ptr.add(1), removed_ptr, self.len - index - 1);
+        };
+
+        self.len -= 1;
+
+        Some(value)
     }
 }
 
@@ -315,5 +334,116 @@ mod tests {
         assert!(!sv.in_bounds(2..1));
         // end > len invalid
         assert!(!sv.in_bounds(0..(len + 1)));
+    }
+
+    #[test]
+    fn remove_middle_shifts_and_len_decreases() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        sv.push(10);
+        sv.push(20);
+        sv.push(30);
+        sv.push(40);
+        assert_eq!(sv.len(), 4);
+
+        // remove element "20" at index 1
+        assert_eq!(sv.remove(1), Some(20));
+
+        assert_eq!(sv.len(), 3);
+        assert_eq!(sv[0], 10);
+        assert_eq!(sv[1], 30);
+        assert_eq!(sv[2], 40);
+    }
+
+    #[test]
+    fn remove_last_is_ok_and_no_shift_needed() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        sv.push(1);
+        sv.push(2);
+        sv.push(3);
+        assert_eq!(sv.len(), 3);
+
+        // remove last (index 2)
+        assert_eq!(sv.remove(2), Some(3));
+
+        assert_eq!(sv.len(), 2);
+        assert_eq!(sv[0], 1);
+        assert_eq!(sv[1], 2);
+
+        // removing last repeatedly empties the vec
+        assert_eq!(sv.remove(1), Some(2));
+        assert_eq!(sv.remove(0), Some(1));
+        assert!(sv.is_empty());
+        assert!(sv.pop().is_none());
+    }
+
+    #[test]
+    fn remove_first_until_empty() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        for i in 0..5 {
+            sv.push(i as i32).unwrap();
+        }
+        assert_eq!(sv.len(), 5);
+
+        // remove index 0 repeatedly; remaining elements shift left each time
+        assert_eq!(sv.remove(0), Some(1));
+
+        assert_eq!(sv.remove(0), Some(2));
+
+        assert_eq!(sv.remove(0), Some(3));
+
+        assert_eq!(sv.remove(0), Some(4));
+
+        assert_eq!(sv.remove(0), Some(5));
+        assert!(sv.is_empty());
+    }
+
+    #[test]
+    fn remove_out_of_bounds_and_at_len_returns_none_and_no_change() {
+        let mut sv: StackVec<i32, 4> = StackVec::new();
+        sv.push(7).unwrap();
+        sv.push(8).unwrap();
+        let before = sv.clone();
+
+        // index == len is out of bounds for removal; should return None (no panic)
+        let len = sv.len();
+        assert_eq!(sv.remove(len), None);
+
+        // > len is also out of bounds
+        assert_eq!(sv.remove(len + 1), None);
+
+        // state unchanged
+        assert_eq!(sv.len(), before.len());
+        assert_eq!(sv[0], before[0]);
+        assert_eq!(sv[1], before[1]);
+    }
+
+    #[test]
+    fn remove_on_empty_is_none() {
+        let mut sv: StackVec<i32, 0> = StackVec::new();
+        assert_eq!(sv.len(), 0);
+        assert_eq!(sv.remove(0), None);
+
+        let mut sv2: StackVec<i32, 4> = StackVec::new();
+        assert_eq!(sv2.remove(0), None);
+    }
+
+    #[test]
+    fn remove_preserves_invariants() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        sv.push(1);
+        sv.push(2);
+        sv.push(3);
+        sv.push(4);
+        assert_eq!(sv.remove(1), Some(2));
+        assert_eq!(sv.len(), 3);
+
+        // in-bounds indexing still works
+        assert_eq!(sv[0], 1);
+        assert_eq!(sv[1], 3);
+        assert_eq!(sv[2], 4);
+
+        // out-of-bounds access remains guarded via .get()
+        assert!(sv.get(3usize).is_none());
+        assert!(sv.get(3..4).is_none());
     }
 }
