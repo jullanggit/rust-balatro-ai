@@ -60,6 +60,7 @@ impl Game {
                                     jokers: StackVec::new(),
                                     consumables: StackVec::new(),
                                     tags_to_use: StackVec::new(),
+                                    vouchers: StackVec::new(),
                                     ante: 1,
                                 },
                                 pack: None,
@@ -191,6 +192,7 @@ pub struct InGame {
     discards: u8,
     jokers: StackVec<Joker, MAX_JOKERS>,
     consumables: StackVec<Consumable, MAX_CONSUMABLES>,
+    vouchers: StackVec<Voucher, MAX_CONSUMABLES>,
     tags_to_use: StackVec<Tag, MAX_TAGS>,
     ante: Ante,
 }
@@ -352,7 +354,7 @@ impl BlindProgress {
 }
 
 macro_rules! BossBlind {
-    ($($min_ante:literal $(, $name:ident  $(,($base_mult:literal))? $(,[$reward:literal])?)*),+) => {
+    ($(($min_ante:literal $(, $name:ident  $(,($base_mult:literal))? $(,[$reward:literal])?)*)),+) => {
         #[derive(Debug)]
         #[repr(u8)]
         pub enum BossBlind {
@@ -412,50 +414,32 @@ impl BossBlind {
     }
 }
 BossBlind!(
-    1,
-    TheHook,
-    TheClub,
-    ThePsychic,
-    TheGoad,
-    TheWindow,
-    TheManacle,
-    ThePillar,
-    TheHead,
-    2,
-    TheHouse,
-    TheWall,
-    TheWheel,
-    TheArm,
-    TheFish,
-    TheWater,
-    TheMouth,
-    TheNeedle,
-    TheFlint,
-    TheMark,
-    3,
-    TheEye,
-    TheTooth,
-    4,
-    ThePlant,
-    5,
-    TheSerpent,
-    (1),
-    6,
-    TheOx,
-    (4),
-    7,
-    8,
-    AmberAcorn,
-    [8],
-    VerdantLeaft,
-    [8],
-    VioletVessel,
-    (6),
-    [8],
-    CrimsonHeart,
-    [8],
-    CeruleanBell,
-    [8]
+    (
+        1, TheHook, TheClub, ThePsychic, TheGoad, TheWindow, TheManacle, ThePillar, TheHead
+    ),
+    (
+        2, TheHouse, TheWall, TheWheel, TheArm, TheFish, TheWater, TheMouth, TheNeedle, TheFlint,
+        TheMark
+    ),
+    (3, TheEye, TheTooth),
+    (4, ThePlant),
+    (5, TheSerpent, (1)),
+    (6, TheOx, (4)),
+    (7),
+    (
+        8,
+        AmberAcorn,
+        [8],
+        VerdantLeaft,
+        [8],
+        VioletVessel,
+        (6),
+        [8],
+        CrimsonHeart,
+        [8],
+        CeruleanBell,
+        [8]
+    )
 );
 
 #[derive(Debug, Clone, Copy)]
@@ -485,6 +469,47 @@ pub enum Tag {
     Orbital,
     Economy,
 }
+
+macro_rules! Voucher {
+    ($(($base:ident, $upgrade:ident)),+) => {
+        #[derive(Debug)]
+        pub enum Voucher {
+            $(
+                $base,
+                $upgrade,
+            )+
+        }
+        impl Voucher {
+            /// Returns the upgraded version of the voucher, if there is one
+            pub fn upgrade(&self) -> Option<Self> {
+                match self {
+                    $(
+                        Self::$base => Some(Self::$upgrade),
+                        Self::$upgrade => None,
+                    )+
+                }
+            }
+        }
+    };
+}
+Voucher!(
+    (Overstock, OverstockPlus),
+    (ClearanceSale, Liquidation),
+    (Hone, GlowUp),
+    (RerollSurpluss, RerollGlut),
+    (CrystalBall, OmenGlobe),
+    (Telescope, Observatory),
+    (Gravver, NachoTong),
+    (Wasteful, Recyclomancy),
+    (TarotMerchant, TarotTycoon),
+    (PlanetMerchant, PlanetTycoon),
+    (SeedMoney, MoneyTree),
+    (Blank, Antimatter),
+    (MagicTrick, Illusion),
+    (Hieroglyph, Petroglyph),
+    (DirectorsCut, Retcon),
+    (PaintBrush, Palette)
+);
 
 // see codegen crate
 // CODEGEN START
