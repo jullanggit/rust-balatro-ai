@@ -1,6 +1,6 @@
 use core::{
     mem::MaybeUninit,
-    ops::{Index, IndexMut, Range},
+    ops::{Deref, DerefMut, Index, IndexMut, Range},
     ptr,
 };
 
@@ -216,6 +216,37 @@ where
 {
     fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
         self.get_mut(index).unwrap()
+    }
+}
+
+impl<T, const CAPACITY: usize> Deref for StackVec<T, CAPACITY> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY
+        // According to Invariant 1. self.len is always in bounds
+        unsafe { self.get_unchecked(0..self.len) }
+    }
+}
+impl<T, const CAPACITY: usize> DerefMut for StackVec<T, CAPACITY> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY
+        // According to Invariant 1. self.len is always in bounds
+        unsafe { self.get_unchecked_mut(0..self.len) }
+    }
+}
+
+impl<T, const CAPACITY: usize> FromIterator<T> for StackVec<T, CAPACITY> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut out = Self::new();
+
+        for element in iter {
+            if out.push(element).is_none() {
+                break;
+            };
+        }
+
+        out
     }
 }
 

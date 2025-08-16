@@ -4,9 +4,9 @@
 #![feature(maybe_uninit_slice)]
 #![feature(transmutability)]
 
-use crate::stackvec::StackVec;
+use crate::stackvec::{Len, StackVec};
 use core::mem::{self, Assume, TransmuteFrom};
-use core::stringify;
+use core::{array, iter, stringify};
 use fastrand::Rng;
 use thiserror::Error;
 
@@ -48,6 +48,7 @@ impl Game {
                         GameState::SelectingStake(deck) => {
                             state = GameState::SelectingBlind(SelectingBlind {
                                 in_game: InGame {
+                                    deck_cards: deck.deck_cards(&mut self.rng),
                                     deck,
                                     stake,
                                     blind_progress: BlindProgress::Small,
@@ -62,6 +63,7 @@ impl Game {
                                     tags_to_use: StackVec::new(),
                                     vouchers: StackVec::new(),
                                     ante: 1,
+                                    hand_size: 8,
                                 },
                                 pack: None,
                             });
@@ -77,7 +79,22 @@ impl Game {
                     GameState::SelectingBlind(SelectingBlind { mut in_game, .. }) => {
                         // advance blind progress and enter round
                         in_game.blind_progress.advance(&mut in_game.ante);
-                        state = GameState::InRound(InRound { in_game });
+
+                        // get hand- & remaining deck cards
+                        let mut deck_indices: StackVec<usize, MAX_DECK_CARDS> =
+                            StackVec::from_iter(0..in_game.deck_cards.len());
+                        self.rng.shuffle(&mut deck_indices);
+
+                        state = GameState::InRound(InRound {
+                            // take first hand_size indices
+                            hand_card_indices: StackVec::from_iter(
+                                deck_indices
+                                    .iter()
+                                    .take(in_game.hand_size as usize)
+                                    .map(|i| *i as u8),
+                            ),
+                            in_game,
+                        });
                     }
                     _ => break 'res Err(ExecuteActionError::InvalidActionForState),
                 },
@@ -167,6 +184,7 @@ pub struct SelectingBlind {
 #[derive(Debug)]
 pub struct InRound {
     in_game: InGame,
+    hand_card_indices: StackVec<u8, MAX_HAND_CARDS>,
 }
 /// State that is present while cashing out
 #[derive(Debug)]
@@ -195,8 +213,11 @@ pub struct InGame {
     vouchers: StackVec<Voucher, MAX_CONSUMABLES>,
     tags_to_use: StackVec<Tag, MAX_TAGS>,
     ante: Ante,
+    deck_cards: DeckCards,
+    hand_size: u8,
 }
 type Ante = u8;
+type DeckCards = StackVec<PlayingCard, MAX_DECK_CARDS>;
 
 // TODO
 #[derive(Debug, PartialEq)]
@@ -240,7 +261,8 @@ pub trait Name {
 #[derive(Debug)]
 pub struct Joker {
     joker_type: JokerType,
-    edition: Edition,
+    edition: Option<Edition>,
+    sticker: Option<Sticker>,
 }
 
 pub struct JokerEffectType {
@@ -288,7 +310,6 @@ impl JokerCompatibility {
 
 #[derive(Debug)]
 pub enum Edition {
-    Base,
     Foil,
     Holographic,
     Polychrome,
@@ -307,6 +328,134 @@ pub enum Consumable {
     Tarot(Tarot),
     Planet(Planet),
     Spectral(Spectral),
+}
+
+#[derive(Debug)]
+pub struct PlayingCard {
+    suit: PlayingCardSuit,
+    rank: PlayingCardRank,
+    edition: Option<Edition>,
+    enhancement: Option<Enhancement>,
+    seal: Option<Seal>,
+    sticker: Option<Sticker>,
+}
+impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
+    fn from((suit, rank): (PlayingCardSuit, PlayingCardRank)) -> Self {
+        Self {
+            suit,
+            rank,
+            edition: None,
+            enhancement: None,
+            seal: None,
+            sticker: None,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum PlayingCardSuit {
+    Hearts,
+    Spades,
+    Clubs,
+    Diamonds,
+}
+impl PlayingCardSuit {
+    fn random(rng: &mut Rng) -> Self {
+        let num = rng.u8(0..4);
+        match num {
+            0 => Self::Hearts,
+            1 => Self::Spades,
+            2 => Self::Clubs,
+            3 => Self::Diamonds,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum PlayingCardRank {
+    Ace,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    Ten,
+    Jack,
+    Queen,
+    King,
+}
+impl PlayingCardRank {
+    const NUM_VARIANTS: u8 = 13;
+
+    fn random(rng: &mut Rng) -> Self {
+        let num = rng.u8(0..Self::NUM_VARIANTS);
+        match num {
+            0 => Self::Ace,
+            1 => Self::Two,
+            2 => Self::Three,
+            3 => Self::Four,
+            4 => Self::Five,
+            5 => Self::Six,
+            6 => Self::Seven,
+            7 => Self::Eight,
+            8 => Self::Nine,
+            9 => Self::Ten,
+            10 => Self::Jack,
+            11 => Self::Queen,
+            12 => Self::King,
+            _ => unreachable!(),
+        }
+    }
+    // TODO: consider pareidolia
+    pub fn is_face(&self) -> bool {
+        matches!(self, Self::Jack | Self::Queen | Self::King)
+    }
+    pub fn is_numbered(&self) -> bool {
+        !self.is_face()
+    }
+    pub fn is_even(&self) -> bool {
+        matches!(
+            self,
+            Self::Two | Self::Four | Self::Six | Self::Eight | Self::Ten
+        )
+    }
+    pub fn is_odd(&self) -> bool {
+        matches!(
+            self,
+            Self::Ace | Self::Three | Self::Five | Self::Seven | Self::Nine
+        )
+    }
+}
+
+#[derive(Debug)]
+pub enum Enhancement {
+    Bonus,
+    Mult,
+    Wild,
+    Glass,
+    Steel,
+    Stone,
+    Gold,
+    Lucky,
+}
+
+#[derive(Debug)]
+pub enum Seal {
+    Gold,
+    Red,
+    Blue,
+    Purple,
+}
+
+#[derive(Debug)]
+pub enum Sticker {
+    Eternal,
+    Perishable,
+    Rental,
 }
 
 macro_rules! EnumWithNameImpl {
@@ -332,6 +481,75 @@ EnumWithNameImpl!(
         Painted, Anaglyph, Plasma, Erratic
     ]
 );
+impl Deck {
+    fn deck_cards(&self, rng: &mut Rng) -> DeckCards {
+        let default = || {
+            let mut default: DeckCards = StackVec::new();
+            for i in 1..=4 {
+                for j in 1..=13 {
+                    let suit = match i {
+                        1 => PlayingCardSuit::Hearts,
+                        2 => PlayingCardSuit::Spades,
+                        3 => PlayingCardSuit::Clubs,
+                        4 => PlayingCardSuit::Diamonds,
+                        _ => unreachable!(),
+                    };
+                    let rank = match j {
+                        1 => PlayingCardRank::Ace,
+                        2 => PlayingCardRank::Two,
+                        3 => PlayingCardRank::Three,
+                        4 => PlayingCardRank::Four,
+                        5 => PlayingCardRank::Five,
+                        6 => PlayingCardRank::Six,
+                        7 => PlayingCardRank::Seven,
+                        8 => PlayingCardRank::Eight,
+                        9 => PlayingCardRank::Nine,
+                        10 => PlayingCardRank::Ten,
+                        11 => PlayingCardRank::Jack,
+                        12 => PlayingCardRank::Queen,
+                        13 => PlayingCardRank::King,
+                        _ => unreachable!(),
+                    };
+                    default.push((suit, rank).into()).unwrap();
+                }
+            }
+            default
+        };
+        match self {
+            Self::Abandoned => {
+                let mut deck = default();
+                for i in 0..deck.len() {
+                    if deck[i].rank.is_face() {
+                        deck.remove(i).unwrap();
+                    }
+                }
+                deck
+            }
+            Self::Checkered => {
+                let mut deck = default();
+                for i in 0..deck.len() {
+                    if deck[i].suit == PlayingCardSuit::Clubs {
+                        deck[i].suit = PlayingCardSuit::Spades
+                    } else if deck[i].suit == PlayingCardSuit::Diamonds {
+                        deck[i].suit = PlayingCardSuit::Hearts
+                    }
+                }
+                deck
+            }
+            Self::Erratic => {
+                let mut deck = StackVec::new();
+                for i in 0..deck.len() {
+                    let suit = PlayingCardSuit::random(rng);
+                    let rank = PlayingCardRank::random(rng);
+                    deck.push((suit, rank).into()).unwrap();
+                }
+                deck
+            }
+            _ => default(),
+        }
+    }
+}
+
 EnumWithNameImpl!(Stake, [White, Red, Green, Black, Blue, Purple, Orane, Gold]);
 
 #[derive(Debug)]
