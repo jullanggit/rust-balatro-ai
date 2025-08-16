@@ -2,12 +2,17 @@
 #![no_std]
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
+#![feature(transmutability)]
 
 use crate::stackvec::StackVec;
-use core::mem::{self};
+use core::mem::{self, Assume, TransmuteFrom};
+use core::stringify;
+use fastrand::Rng;
 use thiserror::Error;
 
 pub mod stackvec;
+#[cfg(test)]
+mod test;
 
 const MAX_CONSUMABLES: usize = 25;
 const MAX_DECK_CARDS: usize = 100;
@@ -19,10 +24,15 @@ const MAX_SHOP_VOUCHERS: usize = 5;
 const MAX_SHOP_PACKS: usize = 2;
 const MAX_PACK_ITEMS: usize = 5;
 
-impl GameState {
+#[derive(Debug)]
+pub struct Game {
+    state: GameState,
+    rng: Rng,
+}
+impl Game {
     pub fn execute_action(&mut self, action: Action) -> Result<(), ExecuteActionError> {
-        // take temporary ownership of self, will be released at the end of the function
-        let mut state = mem::take(self);
+        // take temporary ownership of GameState, will be released at the end of the function
+        let mut state = mem::take(&mut self.state);
 
         let res = 'res: {
             match action {
@@ -35,13 +45,13 @@ impl GameState {
                 }
                 Action::SelectStake(stake) => {
                     match state {
-                        Self::SelectingStake(deck) => {
+                        GameState::SelectingStake(deck) => {
                             state = GameState::SelectingBlind(SelectingBlind {
                                 in_game: InGame {
                                     deck,
                                     stake,
                                     blind_progress: BlindProgress::Small,
-                                    boss_blind: BossBlind::Boss,
+                                    boss_blind: BossBlind::random(&mut self.rng, 1),
                                     blind_tags: [Tag::Uncommon; 2],
                                     money: 4,
                                     // TODO: adjust based on decks
@@ -50,6 +60,7 @@ impl GameState {
                                     jokers: StackVec::new(),
                                     consumables: StackVec::new(),
                                     tags_to_use: StackVec::new(),
+                                    ante: 1,
                                 },
                                 pack: None,
                             });
@@ -59,25 +70,25 @@ impl GameState {
                 }
                 Action::SelectBlind => match state {
                     // disallow selecting blind while opening pack
-                    Self::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
+                    GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
                         break 'res Err(ExecuteActionError::OpeningPack);
                     }
-                    Self::SelectingBlind(SelectingBlind { mut in_game, .. }) => {
+                    GameState::SelectingBlind(SelectingBlind { mut in_game, .. }) => {
                         // advance blind progress and enter round
-                        in_game.blind_progress.advance();
+                        in_game.blind_progress.advance(&mut in_game.ante);
                         state = GameState::InRound(InRound { in_game });
                     }
                     _ => break 'res Err(ExecuteActionError::InvalidActionForState),
                 },
                 Action::SkipBlind => match state {
                     // disallow skipping blind while opening pack
-                    Self::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
+                    GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
                         break 'res Err(ExecuteActionError::OpeningPack);
                     }
-                    Self::SelectingBlind(SelectingBlind {
+                    GameState::SelectingBlind(SelectingBlind {
                         ref mut in_game, ..
                     }) => {
-                        in_game.blind_progress.advance();
+                        in_game.blind_progress.advance(&mut in_game.ante);
                     }
                     _ => break 'res Err(ExecuteActionError::InvalidActionForState),
                 },
@@ -121,17 +132,9 @@ impl GameState {
         };
 
         // give back ownership
-        *self = state;
+        self.state = state;
         res
     }
-}
-
-#[derive(Error, Debug)]
-pub enum ExecuteActionError {
-    #[error("Tried to use invalid action for state")]
-    InvalidActionForState,
-    #[error("Tried to take non-pack action while opening pack")]
-    OpeningPack,
 }
 
 #[derive(Debug, Default)]
@@ -144,6 +147,15 @@ pub enum GameState {
     CashingOut(CashingOut),
     InShop(InShop),
 }
+
+#[derive(Error, Debug)]
+pub enum ExecuteActionError {
+    #[error("Tried to use invalid action for state")]
+    InvalidActionForState,
+    #[error("Tried to take non-pack action while opening pack")]
+    OpeningPack,
+}
+
 /// State that is present during blind selection
 #[derive(Debug)]
 pub struct SelectingBlind {
@@ -174,13 +186,15 @@ pub struct InGame {
     blind_progress: BlindProgress,
     boss_blind: BossBlind,
     blind_tags: [Tag; 2],
-    money: u8,
+    money: u32,
     hands: u8,
     discards: u8,
     jokers: StackVec<Joker, MAX_JOKERS>,
     consumables: StackVec<Consumable, MAX_CONSUMABLES>,
     tags_to_use: StackVec<Tag, MAX_TAGS>,
+    ante: Ante,
 }
+type Ante = u8;
 
 // TODO
 #[derive(Debug, PartialEq)]
@@ -293,32 +307,30 @@ pub enum Consumable {
     Spectral(Spectral),
 }
 
-macro_rules! Deck {
-    ($($name:ident),+) => {
-        use core::stringify;
-
+macro_rules! EnumWithNameImpl {
+    ($enum:ident, [$($name:ident),+]) => {
         #[derive(Debug)]
-        pub enum Deck {
+        pub enum $enum {
             $($name),+
         }
-        impl Name for Deck {
+        impl Name for $enum {
             fn name(&self) -> &'static str {
                 match self {
-                    $(Self::$name => concat!(stringify!($name), " Deck")),+
+                    $(Self::$name => concat!(stringify!($name), "", stringify!($enum))),+
                 }
             }
         }
     };
 }
 
-Deck!(
-    Red, Blue, Yellow, Green, Black, Magic, Nebula, Ghost, Abandoned, Checkered, Zodiac, Painted,
-    Anaglyph, Plasma, Erratic
+EnumWithNameImpl!(
+    Deck,
+    [
+        Red, Blue, Yellow, Green, Black, Magic, Nebula, Ghost, Abandoned, Checkered, Zodiac,
+        Painted, Anaglyph, Plasma, Erratic
+    ]
 );
-
-// TODO
-#[derive(Debug)]
-pub enum Stake {}
+EnumWithNameImpl!(Stake, [White, Red, Green, Black, Blue, Purple, Orane, Gold]);
 
 #[derive(Debug)]
 pub enum BlindProgress {
@@ -327,26 +339,151 @@ pub enum BlindProgress {
     Boss,
 }
 impl BlindProgress {
-    // TODO: also advance stake
-    fn advance(&mut self) {
+    fn advance(&mut self, ante: &mut Ante) {
         *self = match self {
             Self::Small => Self::Big,
             Self::Big => Self::Boss,
-            Self::Boss => Self::Small,
+            Self::Boss => {
+                *ante += 1;
+                Self::Small
+            }
         };
     }
 }
 
-// TODO: remove `Boss`, add different boss blinds
-#[derive(Debug)]
-enum BossBlind {
-    Boss,
-}
+macro_rules! BossBlind {
+    ($($min_ante:literal $(, $name:ident  $(,($base_mult:literal))? $(,[$reward:literal])?)*),+) => {
+        #[derive(Debug)]
+        #[repr(u8)]
+        pub enum BossBlind {
+            $(
+                $(
+                    $name,
+                )*
+            )+
+        }
+        impl BossBlind {
+            /// How many Variants are at the index ante
+            const NUM_VARIANTS_AT_ANTE: [u8; 8] = [$(
+                {let array: [&str;_] = [$(stringify!($name),)*]; array.len() as u8},
+            )+];
 
-// TODO: Add other tags
+            pub fn minimum_ante(&self) -> u8 {
+                match &self {
+                    $(
+                        $(
+                            Self::$name => $min_ante,
+                        )*
+                    )+
+                }
+            }
+            pub fn base_score_multiplier(&self) -> u8 {
+                match &self {
+                    $(
+                        $(
+                            Self::$name =>  2 $(-2 + $base_mult)?,
+                        )*
+                    )+
+                }
+            }
+            pub fn reward(&self) -> u8 {
+                match &self {
+                    $(
+                        $(
+                            Self::$name =>  5 $(-5 + $reward)?,
+                        )*
+                    )+
+                }
+            }
+        }
+    };
+}
+impl BossBlind {
+    pub fn random(rng: &mut Rng, ante: Ante) -> Self {
+        let ante = ante.min(8);
+        let end = Self::NUM_VARIANTS_AT_ANTE[0..ante as usize].iter().sum();
+
+        let u8 = rng.u8(0..end);
+        // SAFETY:
+        // - BossBlind does not carry any safety invariants, so Assume::SAFETY is justified.
+        // - All values in the range specified above are valid `BossBlind`s, so Assume::VALIDITY is justified.
+        // - All other safety invariants are guaranteed by the compiler.
+        unsafe { TransmuteFrom::<_, { Assume::SAFETY.and(Assume::VALIDITY) }>::transmute(u8) }
+    }
+}
+BossBlind!(
+    1,
+    TheHook,
+    TheClub,
+    ThePsychic,
+    TheGoad,
+    TheWindow,
+    TheManacle,
+    ThePillar,
+    TheHead,
+    2,
+    TheHouse,
+    TheWall,
+    TheWheel,
+    TheArm,
+    TheFish,
+    TheWater,
+    TheMouth,
+    TheNeedle,
+    TheFlint,
+    TheMark,
+    3,
+    TheEye,
+    TheTooth,
+    4,
+    ThePlant,
+    5,
+    TheSerpent,
+    (1),
+    6,
+    TheOx,
+    (4),
+    7,
+    8,
+    AmberAcorn,
+    [8],
+    VerdantLeaft,
+    [8],
+    VioletVessel,
+    (6),
+    [8],
+    CrimsonHeart,
+    [8],
+    CeruleanBell,
+    [8]
+);
+
 #[derive(Debug, Clone, Copy)]
 pub enum Tag {
     Uncommon,
+    Rare,
+    Negative,
+    Foil,
+    Holographic,
+    Polychrome,
+    Investment,
+    Voucher,
+    Boss,
+    Standard,
+    Char,
+    Meteor,
+    Buffoon,
+    Handy,
+    Garbage,
+    Ethereal,
+    Coupon,
+    Double,
+    Juggle,
+    D6,
+    TopUp,
+    Speed,
+    Orbital,
+    Economy,
 }
 
 // see codegen crate
