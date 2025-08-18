@@ -85,7 +85,6 @@ async fn consumable(name: &str) -> String {
     let parsed = configuration.parse(&query.expandtemplates.wikitext);
 
     // get table
-    // TODO: The pattern is: Image, then relevant link
     let items = parsed
         .nodes
         .into_iter()

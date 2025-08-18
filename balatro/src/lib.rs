@@ -110,7 +110,40 @@ impl Game {
                     }
                     _ => break 'res Err(ExecuteActionError::InvalidActionForState),
                 },
-                Action::RerollBossBlind => todo!(),
+                Action::RerollBossBlind => {
+                    match state {
+                        // disallow rerolling boss blind while opening pack
+                        GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
+                            break 'res Err(ExecuteActionError::OpeningPack);
+                        }
+                        GameState::SelectingBlind(SelectingBlind {
+                            ref mut in_game, ..
+                        }) => {
+                            let mut can_reroll = false;
+                            if in_game.money >= 10 {
+                                for voucher in in_game.vouchers.iter_mut() {
+                                    if let Voucher::DirectorsCut(false) = voucher {
+                                        *voucher = Voucher::DirectorsCut(true);
+                                        can_reroll = true;
+                                        break;
+                                    }
+                                    if let Voucher::Retcon = voucher {
+                                        can_reroll = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if can_reroll {
+                                // reroll
+                                in_game.money -= 10;
+                                in_game.boss_blind = BossBlind::random(&mut self.rng, in_game.ante);
+                            } else {
+                                break 'res Err(ExecuteActionError::RerollBoss);
+                            }
+                        }
+                        _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    }
+                }
                 Action::PlayHand(stack_vec) => todo!(),
                 Action::DiscardHand(stack_vec) => todo!(),
                 Action::MoveJoker(_) => todo!(),
@@ -172,6 +205,8 @@ pub enum ExecuteActionError {
     InvalidActionForState,
     #[error("Tried to take non-pack action while opening pack")]
     OpeningPack,
+    #[error("Cannot reroll boss blind")]
+    RerollBoss,
 }
 
 /// State that is present during blind selection
@@ -689,20 +724,21 @@ pub enum Tag {
 }
 
 macro_rules! Voucher {
-    ($(($base:ident, $upgrade:ident)),+) => {
+    ($(($base:ident$(($ty:ident))?, $upgrade:ident)),+) => {
         #[derive(Debug)]
         pub enum Voucher {
             $(
-                $base,
+                $base$(($ty))?,
                 $upgrade,
             )+
         }
         impl Voucher {
             /// Returns the upgraded version of the voucher, if there is one
+            #[allow(unused_variables)]
             pub fn upgrade(&self) -> Option<Self> {
                 match self {
                     $(
-                        Self::$base => Some(Self::$upgrade),
+                        Self::$base$(($ty))? => Some(Self::$upgrade),
                         Self::$upgrade => None,
                     )+
                 }
@@ -725,7 +761,7 @@ Voucher!(
     (Blank, Antimatter),
     (MagicTrick, Illusion),
     (Hieroglyph, Petroglyph),
-    (DirectorsCut, Retcon),
+    (DirectorsCut(bool), Retcon),
     (PaintBrush, Palette)
 );
 
