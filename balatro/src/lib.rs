@@ -6,9 +6,7 @@
 
 use crate::stackvec::{Len, StackVec};
 use core::mem::{self, Assume, TransmuteFrom};
-use core::{array, iter, stringify};
 use fastrand::Rng;
-use thiserror::Error;
 
 pub mod stackvec;
 #[cfg(test)]
@@ -30,17 +28,20 @@ pub struct Game {
     rng: Rng,
 }
 impl Game {
-    pub fn execute_action(&mut self, action: Action) -> Result<(), ExecuteActionError> {
+    /// Result<end of game, error>
+    pub fn execute_action(&mut self, action: Action) -> Option<bool> {
         // take temporary ownership of GameState, will be released at the end of the function
         let mut state = mem::take(&mut self.state);
 
         let res = 'res: {
+            let mut end_of_game = false;
+
             match action {
                 Action::SelectDeck(deck) => {
                     if let GameState::SelectingDeck = state {
                         state = GameState::SelectingStake(deck);
                     } else {
-                        break 'res Err(ExecuteActionError::InvalidActionForState);
+                        break 'res None;
                     }
                 }
                 Action::SelectStake(stake) => {
@@ -68,56 +69,59 @@ impl Game {
                                 pack: None,
                             });
                         }
-                        _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                        _ => break 'res None,
                     }
                 }
                 Action::SelectBlind => match state {
                     // disallow selecting blind while opening pack
-                    GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
-                        break 'res Err(ExecuteActionError::OpeningPack);
-                    }
-                    GameState::SelectingBlind(SelectingBlind { mut in_game, .. }) => {
+                    GameState::SelectingBlind(SelectingBlind {
+                        mut in_game,
+                        pack: None,
+                        ..
+                    }) => {
                         // advance blind progress and enter round
                         in_game.blind_progress.advance(&mut in_game.ante);
 
-                        // get hand- & remaining deck cards
-                        let mut deck_indices: StackVec<usize, MAX_DECK_CARDS> =
-                            StackVec::from_iter(0..in_game.deck_cards.len());
-                        self.rng.shuffle(&mut deck_indices);
-
-                        state = GameState::InRound(InRound {
-                            // take first hand_size indices
-                            hand_card_indices: StackVec::from_iter(
-                                deck_indices
-                                    .iter()
-                                    .take(in_game.hand_size as usize)
-                                    .map(|i| *i as u8),
-                            ),
+                        let mut in_round = InRound {
+                            hand_card_indices: StackVec::new(),
+                            discarded_card_indices: StackVec::new(),
                             in_game,
-                        });
+                        };
+
+                        // draw hand cards
+                        for _ in 0..in_round.in_game.hand_size {
+                            // if there are no more cards to draw, its fine, just stop trying.
+                            if in_round.draw_card().is_none() {
+                                break;
+                            };
+                        }
+
+                        if in_round.hand_card_indices.is_empty() {
+                            end_of_game = true;
+                        }
+
+                        state = GameState::InRound(in_round);
                     }
-                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    _ => break 'res None,
                 },
                 Action::SkipBlind => match state {
                     // disallow skipping blind while opening pack
-                    GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
-                        break 'res Err(ExecuteActionError::OpeningPack);
-                    }
                     GameState::SelectingBlind(SelectingBlind {
-                        ref mut in_game, ..
+                        ref mut in_game,
+                        pack: None,
+                        ..
                     }) => {
                         in_game.blind_progress.advance(&mut in_game.ante);
                     }
-                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    _ => break 'res None,
                 },
                 Action::RerollBossBlind => {
                     match state {
                         // disallow rerolling boss blind while opening pack
-                        GameState::SelectingBlind(SelectingBlind { pack: Some(_), .. }) => {
-                            break 'res Err(ExecuteActionError::OpeningPack);
-                        }
                         GameState::SelectingBlind(SelectingBlind {
-                            ref mut in_game, ..
+                            ref mut in_game,
+                            pack: None,
+                            ..
                         }) => {
                             let mut can_reroll = false;
                             if in_game.money >= 10 {
@@ -138,17 +142,47 @@ impl Game {
                                 in_game.money -= 10;
                                 in_game.boss_blind = BossBlind::random(&mut self.rng, in_game.ante);
                             } else {
-                                break 'res Err(ExecuteActionError::RerollBoss);
+                                break 'res None;
                             }
                         }
-                        _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                        _ => break 'res None,
                     }
                 }
-                Action::PlayHand(stack_vec) => todo!(),
-                Action::DiscardHand(stack_vec) => todo!(),
+                Action::PlayHand(_) => todo!(),
+                Action::DiscardHand(discard_indices) => {
+                    match &mut state {
+                        GameState::InRound(in_round) => {
+                            // move cards from hand to discarded
+                            for index in discard_indices.iter() {
+                                let Some(item) = in_round.hand_card_indices.remove(*index) else {
+                                    break 'res None;
+                                };
+                                in_round.discarded_card_indices.push(item).expect("Capacities of deck_cards and discarded_card_indices match, so item should always fit");
+                            }
+                            // draw new cards
+                            let num_to_draw =
+                                if in_round.in_game.boss_blind == BossBlind::TheSerpent {
+                                    3
+                                } else {
+                                    discard_indices.len()
+                                };
+                            for _ in 0..num_to_draw {
+                                if in_round.draw_card().is_none() {
+                                    // stop trying to draw if there are no more cards to be drawn
+                                    break;
+                                };
+                            }
+
+                            if in_round.hand_card_indices.is_empty() {
+                                end_of_game = true;
+                            }
+                        }
+                        _ => break 'res None,
+                    }
+                }
                 Action::MoveJoker(_) => todo!(),
                 Action::SellJoker(_) => todo!(),
-                Action::UseConsumable(_, stack_vec) => todo!(),
+                Action::UseConsumable(_, _) => todo!(),
                 Action::SellConsumable(_) => todo!(),
                 Action::BuyShopCard(_) => todo!(),
                 Action::RedeemVoucher(_) => todo!(),
@@ -156,18 +190,19 @@ impl Game {
                 Action::Reroll => todo!(),
                 Action::NextRound => match state {
                     // disallow leaving shop while opening pack
-                    GameState::InShop(InShop { pack: Some(_), .. }) => {
-                        break 'res Err(ExecuteActionError::OpeningPack);
-                    }
-                    GameState::InShop(InShop { in_game, .. }) => {
+                    GameState::InShop(InShop {
+                        in_game,
+                        pack: None,
+                        ..
+                    }) => {
                         state = GameState::SelectingBlind(SelectingBlind {
                             in_game,
                             pack: None,
                         })
                     }
-                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    _ => break 'res None,
                 },
-                Action::ChoosePackItem(stack_vec) => todo!(),
+                Action::ChoosePackItem(_) => todo!(),
                 Action::SkipPack => match state {
                     GameState::SelectingBlind(SelectingBlind { ref mut pack, .. })
                     | GameState::InShop(InShop { ref mut pack, .. })
@@ -175,11 +210,11 @@ impl Game {
                     {
                         *pack = None;
                     }
-                    _ => break 'res Err(ExecuteActionError::InvalidActionForState),
+                    _ => break 'res None,
                 },
             }
 
-            Ok(())
+            Some(end_of_game)
         };
 
         // give back ownership
@@ -199,16 +234,6 @@ pub enum GameState {
     InShop(InShop),
 }
 
-#[derive(Error, Debug)]
-pub enum ExecuteActionError {
-    #[error("Tried to use invalid action for state")]
-    InvalidActionForState,
-    #[error("Tried to take non-pack action while opening pack")]
-    OpeningPack,
-    #[error("Cannot reroll boss blind")]
-    RerollBoss,
-}
-
 /// State that is present during blind selection
 #[derive(Debug)]
 pub struct SelectingBlind {
@@ -220,6 +245,33 @@ pub struct SelectingBlind {
 pub struct InRound {
     in_game: InGame,
     hand_card_indices: StackVec<u8, MAX_HAND_CARDS>,
+    discarded_card_indices: StackVec<u8, MAX_DECK_CARDS>,
+}
+impl InRound {
+    #[must_use = "Should handle error"]
+    /// Draw a card from the remaining deck into the hand. Returns None if the remaining deck is empty.
+    fn draw_card(&mut self) -> Option<()> {
+        // all indices that arent already in hand or discarded
+        let in_deck_indices: StackVec<u8, MAX_DECK_CARDS> = (0..self.in_game.deck_cards.len()
+            as u8)
+            .filter(|index| {
+                !(self.hand_card_indices.contains(index)
+                    || self.discarded_card_indices.contains(index))
+            })
+            .collect();
+
+        let range = 0..in_deck_indices.len() as u8;
+        if range.is_empty() {
+            return None;
+        }
+
+        let indices_index = fastrand::u8(range);
+        self.hand_card_indices
+            .push(in_deck_indices[indices_index as usize])
+            .expect("Max hand cards should not be reached");
+
+        Some(())
+    }
 }
 /// State that is present while cashing out
 #[derive(Debug)]
@@ -608,7 +660,7 @@ impl BlindProgress {
 
 macro_rules! BossBlind {
     ($(($min_ante:literal $(, $name:ident  $(,($base_mult:literal))? $(,[$reward:literal])?)*)),+) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         #[repr(u8)]
         pub enum BossBlind {
             $(

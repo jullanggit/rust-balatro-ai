@@ -22,6 +22,7 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
         }
     }
     /// Push `element` onto the vec. Returns None if the CAPACITY was reached.
+    #[must_use = "Should handle error"]
     pub fn push(&mut self, element: T) -> Option<()> {
         // let compiler insert bounds check
         *self.array.get_mut(self.len)? = MaybeUninit::new(element);
@@ -30,6 +31,7 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
         Some(())
     }
     /// Pop the last element from the vec. Returns None if the vec is empty.
+    #[must_use = "Should handle error"]
     pub fn pop(&mut self) -> Option<T> {
         if self.is_empty() {
             return None;
@@ -45,6 +47,7 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
         Some(unsafe { element.assume_init_read() })
     }
     /// Removes and returns the element at `index`, shifting all subsequent elements to the left. Returns none if index is out of bounds.
+    #[must_use = "Should handle error"]
     pub fn remove(&mut self, index: usize) -> Option<T> {
         let removed = self.get_mut(index)?;
         let removed_ptr = removed as *mut T;
