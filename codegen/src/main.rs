@@ -516,11 +516,11 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
         .unwrap();
     }
 
-    let mut match_fn = |code: &mut String,
-                        public: bool,
-                        fn_name: &str,
-                        return_type: &str,
-                        branch: fn(&CodegenJoker) -> String| {
+    let match_fn = |code: &mut String,
+                    public: bool,
+                    fn_name: &str,
+                    return_type: &str,
+                    branch: fn(&CodegenJoker) -> String| {
         writeln!(
             code,
             "{} fn {fn_name}(&self) -> {return_type} {{ match self {{ {} }} }}",

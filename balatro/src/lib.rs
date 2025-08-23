@@ -88,13 +88,7 @@ impl Game {
                             in_game,
                         };
 
-                        // draw hand cards
-                        for _ in 0..in_round.in_game.hand_size {
-                            // if there are no more cards to draw, its fine, just stop trying.
-                            if in_round.draw_card().is_none() {
-                                break;
-                            };
-                        }
+                        in_round.draw_cards(in_round.in_game.hand_size, &mut self.rng);
 
                         if in_round.hand_card_indices.is_empty() {
                             end_of_game = true;
@@ -164,14 +158,9 @@ impl Game {
                                 if in_round.in_game.boss_blind == BossBlind::TheSerpent {
                                     3
                                 } else {
-                                    discard_indices.len()
+                                    discard_indices.len() as u8
                                 };
-                            for _ in 0..num_to_draw {
-                                if in_round.draw_card().is_none() {
-                                    // stop trying to draw if there are no more cards to be drawn
-                                    break;
-                                };
-                            }
+                            in_round.draw_cards(num_to_draw, &mut self.rng);
 
                             if in_round.hand_card_indices.is_empty() {
                                 end_of_game = true;
@@ -180,7 +169,26 @@ impl Game {
                         _ => break 'res None,
                     }
                 }
-                Action::MoveJoker(_) => todo!(),
+                Action::MoveJoker([current_position, new_position]) => match state {
+                    GameState::SelectingBlind(SelectingBlind {
+                        in_game: InGame { ref mut jokers, .. },
+                        ..
+                    })
+                    | GameState::InRound(InRound {
+                        in_game: InGame { ref mut jokers, .. },
+                        ..
+                    })
+                    | GameState::CashingOut(CashingOut {
+                        in_game: InGame { ref mut jokers, .. },
+                    })
+                    | GameState::InShop(InShop {
+                        in_game: InGame { ref mut jokers, .. },
+                        ..
+                    }) => {
+                        jokers.relocate(current_position, new_position);
+                    }
+                    _ => break 'res None,
+                },
                 Action::SellJoker(_) => todo!(),
                 Action::UseConsumable(_, _) => todo!(),
                 Action::SellConsumable(_) => todo!(),
@@ -250,7 +258,7 @@ pub struct InRound {
 impl InRound {
     #[must_use = "Should handle error"]
     /// Draw a card from the remaining deck into the hand. Returns None if the remaining deck is empty.
-    fn draw_card(&mut self) -> Option<()> {
+    fn draw_card(&mut self, rng: &mut Rng) -> Option<()> {
         // all indices that arent already in hand or discarded
         let in_deck_indices: StackVec<u8, MAX_DECK_CARDS> = (0..self.in_game.deck_cards.len()
             as u8)
@@ -265,12 +273,21 @@ impl InRound {
             return None;
         }
 
-        let indices_index = fastrand::u8(range);
+        let indices_index = rng.u8(range);
         self.hand_card_indices
             .push(in_deck_indices[indices_index as usize])
             .expect("Max hand cards should not be reached");
 
         Some(())
+    }
+    /// Draw `num` cards. Returns how many draw where successful
+    fn draw_cards(&mut self, num: u8, rng: &mut Rng) -> u8 {
+        for i in 0..num {
+            if self.draw_card(rng).is_none() {
+                return i;
+            }
+        }
+        num
     }
 }
 /// State that is present while cashing out
@@ -321,7 +338,7 @@ pub enum Action {
     PlayHand(StackVec<usize, MAX_HAND_CARDS>),
     /// Discard the hand containing the cards at the indices contained in the vec
     DiscardHand(StackVec<usize, MAX_HAND_CARDS>),
-    /// [current, new]
+    /// [current position, new position]
     MoveJoker([usize; 2]),
     SellJoker(usize),
     /// [consumable index, hand cards to operate on (in the order present in the vec)]

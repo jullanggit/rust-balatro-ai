@@ -49,21 +49,57 @@ impl<T, const CAPACITY: usize> StackVec<T, CAPACITY> {
     /// Removes and returns the element at `index`, shifting all subsequent elements to the left. Returns none if index is out of bounds.
     #[must_use = "Should handle error"]
     pub fn remove(&mut self, index: usize) -> Option<T> {
-        let removed = self.get_mut(index)?;
-        let removed_ptr = removed as *mut T;
+        if !self.in_bounds(index) {
+            return None;
+        }
+        let base = self.array.as_mut_ptr();
+
         // SAFETY
         // - `removed` is a &mut T and is thus properly aligned and initialized
         // - we will overwrite the location in the next step, so it will not be double-dropped
-        let value = unsafe { ptr::read(removed_ptr) };
+        let value = unsafe { ptr::read(base.add(index) as *mut T) };
 
         // shift everything down
         unsafe {
-            ptr::copy(removed_ptr.add(1), removed_ptr, self.len - index - 1);
+            ptr::copy(base.add(index + 1), base.add(index), self.len - index - 1);
         };
 
         self.len -= 1;
 
         Some(value)
+    }
+    /// Moves the element at index `current` to index `new`, keeping all other element in order. Returns None if `current` is the same as `new` or either of them are out of bounds.
+    pub fn relocate(&mut self, current: usize, new: usize) -> Option<()> {
+        if current == new || !self.in_bounds(current) || !self.in_bounds(new) {
+            return None;
+        };
+
+        let base = self.array.as_mut_ptr();
+
+        // SAFETY
+        // - `removed` is a &mut T and is thus properly aligned and initialized
+        // - we will overwrite the location in the next step, so it will not be double-dropped
+        let value = unsafe { (base.add(current) as *mut T).read() };
+
+        // shift down
+        if current < new {
+            unsafe { ptr::copy(base.add(current + 1), base.add(current), new - current) };
+        // shift up
+        } else {
+            unsafe { ptr::copy(base.add(new), base.add(new + 1), current - new) };
+        }
+
+        self.array[new] = MaybeUninit::new(value);
+
+        Some(())
+    }
+}
+impl<T, const CAPACITY: usize> PartialEq for StackVec<T, CAPACITY>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
     }
 }
 
@@ -413,8 +449,8 @@ mod tests {
     #[test]
     fn remove_first_until_empty() {
         let mut sv: StackVec<i32, 8> = StackVec::new();
-        for i in 0..5 {
-            sv.push(i as i32).unwrap();
+        for i in 1..=5 {
+            sv.push(i).unwrap();
         }
         assert_eq!(sv.len(), 5);
 
@@ -479,5 +515,75 @@ mod tests {
         // out-of-bounds access remains guarded via .get()
         assert!(sv.get(3usize).is_none());
         assert!(sv.get(3..4).is_none());
+    }
+    #[test]
+    fn relocate_forward_and_backward() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        for i in 0..5 {
+            sv.push(i).unwrap(); // [0,1,2,3,4]
+        }
+
+        // move 1 (index 1) to after 3 (index 3)
+        assert_eq!(sv.relocate(1, 3), Some(()));
+        assert_eq!(sv.deref(), &[0, 2, 3, 1, 4]);
+
+        // move 3 (index 2) back to index 0
+        assert_eq!(sv.relocate(2, 0), Some(()));
+        assert_eq!(sv.deref(), &[3, 0, 2, 1, 4]);
+    }
+
+    #[test]
+    fn relocate_first_to_last_and_last_to_first() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        for i in 1..=4 {
+            sv.push(i).unwrap(); // [1,2,3,4]
+        }
+
+        // move first to last
+        assert_eq!(sv.relocate(0, 3), Some(()));
+        assert_eq!(sv.deref(), &[2, 3, 4, 1]);
+
+        // move last back to first
+        assert_eq!(sv.relocate(3, 0), Some(()));
+        assert_eq!(sv.deref(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn relocate_invalid_indices_and_noop() {
+        let mut sv: StackVec<i32, 4> = StackVec::new();
+        sv.push(10).unwrap();
+        sv.push(20).unwrap();
+
+        // noop when current == new
+        assert_eq!(sv.relocate(1, 1), None);
+        assert_eq!(sv.deref(), &[10, 20]);
+
+        // out of bounds
+        assert_eq!(sv.relocate(0, 5), None);
+        assert_eq!(sv.relocate(5, 0), None);
+    }
+
+    #[test]
+    fn relocate_preserves_len_and_contents() {
+        let mut sv: StackVec<i32, 8> = StackVec::new();
+        for i in 0..6 {
+            sv.push(i).unwrap();
+        }
+        let len_before = sv.len();
+        let mut elems_before: StackVec<_, 8> = sv.clone();
+
+        // perform a bunch of relocations
+        sv.relocate(0, 5);
+        sv.relocate(4, 1);
+        sv.relocate(2, 3);
+
+        // len unchanged
+        assert_eq!(sv.len(), len_before);
+
+        // still the same set of elements, just permuted
+        let mut elems_after: StackVec<_, _> = sv.clone();
+        elems_before.sort();
+        elems_after.sort();
+        assert_eq!(elems_before, elems_after);
     }
 }

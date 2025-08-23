@@ -4,7 +4,7 @@ use crate::BossBlind;
 
 #[test]
 fn test_random_bossblind() {
-    let mut rng = Rng::new();
+    let mut rng = Rng::with_seed(123);
     for _ in 0..1000 {
         let ante = rng.u8(1..8);
         let random = BossBlind::random(&mut rng, ante);
