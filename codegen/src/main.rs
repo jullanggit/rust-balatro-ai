@@ -223,9 +223,6 @@ async fn consumables_codegen(name: &str, names: Vec<String>, stats: Vec<[u8; 2]>
     match_fn(&mut code, "buy_price", "u8", |_, [price, _]| {
         price.to_string()
     });
-    match_fn(&mut code, "sell_price", "u8", |_, [_, price]| {
-        price.to_string()
-    });
 
     writeln!(code, "}}").unwrap();
 
@@ -243,7 +240,6 @@ struct CodegenJoker {
     actual_name: String,
     rarity: &'static str,
     buy_price: u8,
-    sell_price: u8,
     effect_type: JokerEffectType,
     compatibility: JokerCompatibility,
 }
@@ -311,7 +307,6 @@ async fn jokers() -> String {
         let mut actual_name = None;
         let mut rarity = None;
         let mut buy_price: Option<u8> = None;
-        let mut sell_price: Option<u8> = None;
         let mut effect_type = None;
         let mut compatibility = None;
 
@@ -374,16 +369,6 @@ async fn jokers() -> String {
                                                 .unwrap(),
                                         )
                                     }
-                                    "Sell Price" => {
-                                        sell_price = Some(
-                                            stat.value
-                                                .split(' ')
-                                                .next_back()
-                                                .unwrap()
-                                                .parse()
-                                                .unwrap(),
-                                        )
-                                    }
                                     "Type" => {
                                         effect_type =
                                             Some(if stat.value.contains("Additive Mult") {
@@ -419,7 +404,7 @@ async fn jokers() -> String {
                                                 unreachable!()
                                             });
                                     }
-                                    "Activation" => {}
+                                    "Sell Price" | "Activation" => {}
                                     other => panic!("{other}"),
                                 }
                             }
@@ -467,7 +452,6 @@ async fn jokers() -> String {
             actual_name: actual_name.unwrap(),
             rarity: rarity.unwrap(),
             buy_price: buy_price.unwrap(),
-            sell_price: sell_price.unwrap(),
             effect_type: effect_type.unwrap(),
             compatibility: compatibility.unwrap(),
         });
@@ -577,9 +561,6 @@ async fn jokers_codegen(jokers: Vec<CodegenJoker>) -> String {
 
     match_fn(&mut code, false, "buy_price", "u8", |joker| {
         joker.buy_price.to_string()
-    });
-    match_fn(&mut code, false, "sell_price", "u8", |joker| {
-        joker.sell_price.to_string()
     });
 
     writeln!(code, "}}").unwrap();

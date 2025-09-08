@@ -189,9 +189,45 @@ impl Game {
                     }
                     _ => break 'res None,
                 },
-                Action::SellJoker(_) => todo!(),
+                Action::SellJoker(index) => match state {
+                    GameState::SelectingBlind(SelectingBlind {
+                        ref mut in_game, ..
+                    })
+                    | GameState::InRound(InRound {
+                        ref mut in_game, ..
+                    })
+                    | GameState::CashingOut(CashingOut { ref mut in_game })
+                    | GameState::InShop(InShop {
+                        ref mut in_game, ..
+                    }) => {
+                        let Some(joker) = in_game.jokers.remove(index) else {
+                            break 'res None;
+                        };
+                        in_game.money +=
+                            (joker.sell_price() as f32 * in_game.cost_multiplier()) as u32;
+                    }
+                    _ => break 'res None,
+                },
                 Action::UseConsumable(_, _) => todo!(),
-                Action::SellConsumable(_) => todo!(),
+                Action::SellConsumable(index) => match state {
+                    GameState::SelectingBlind(SelectingBlind {
+                        ref mut in_game, ..
+                    })
+                    | GameState::InRound(InRound {
+                        ref mut in_game, ..
+                    })
+                    | GameState::CashingOut(CashingOut { ref mut in_game })
+                    | GameState::InShop(InShop {
+                        ref mut in_game, ..
+                    }) => {
+                        let Some(consumable) = in_game.consumables.remove(index) else {
+                            break 'res None;
+                        };
+                        in_game.money +=
+                            (consumable.sell_price() as f32 * in_game.cost_multiplier()) as u32;
+                    }
+                    _ => break 'res None,
+                },
                 Action::BuyShopCard(_) => todo!(),
                 Action::RedeemVoucher(_) => todo!(),
                 Action::OpenPack(_) => todo!(),
@@ -320,6 +356,18 @@ pub struct InGame {
     deck_cards: DeckCards,
     hand_size: u8,
 }
+impl InGame {
+    fn cost_multiplier(&self) -> f32 {
+        if self.vouchers.contains(&Voucher::Liquidation) {
+            0.5
+        } else if self.vouchers.contains(&Voucher::ClearanceSale) {
+            0.75
+        } else {
+            1.
+        }
+    }
+}
+
 type Ante = u8;
 type DeckCards = StackVec<PlayingCard, MAX_DECK_CARDS>;
 
@@ -355,7 +403,9 @@ pub enum Action {
 
 pub trait Price {
     fn buy_price(&self) -> u8;
-    fn sell_price(&self) -> u8;
+    fn sell_price(&self) -> u8 {
+        1.max(self.buy_price() / 2)
+    }
 }
 
 pub trait Name {
@@ -367,6 +417,11 @@ pub struct Joker {
     joker_type: JokerType,
     edition: Option<Edition>,
     sticker: Option<Sticker>,
+}
+impl Price for Joker {
+    fn buy_price(&self) -> u8 {
+        self.joker_type.buy_price() + self.edition.as_ref().map_or(0, Price::buy_price)
+    }
 }
 
 pub struct JokerEffectType {
@@ -419,6 +474,16 @@ pub enum Edition {
     Polychrome,
     Negative,
 }
+impl Price for Edition {
+    fn buy_price(&self) -> u8 {
+        match self {
+            Edition::Foil => 2,
+            Edition::Holographic => 3,
+            Edition::Polychrome => 5,
+            Edition::Negative => 5,
+        }
+    }
+}
 
 pub enum Rarity {
     Common,
@@ -432,6 +497,15 @@ pub enum Consumable {
     Tarot(Tarot),
     Planet(Planet),
     Spectral(Spectral),
+}
+impl Price for Consumable {
+    fn buy_price(&self) -> u8 {
+        match self {
+            Consumable::Tarot(tarot) => tarot.buy_price(),
+            Consumable::Planet(planet) => planet.buy_price(),
+            Consumable::Spectral(spectral) => spectral.buy_price(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -794,7 +868,7 @@ pub enum Tag {
 
 macro_rules! Voucher {
     ($(($base:ident$(($ty:ident))?, $upgrade:ident)),+) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         pub enum Voucher {
             $(
                 $base$(($ty))?,
@@ -833,6 +907,11 @@ Voucher!(
     (DirectorsCut(bool), Retcon),
     (PaintBrush, Palette)
 );
+impl Price for Voucher {
+    fn buy_price(&self) -> u8 {
+        10
+    }
+}
 
 // see codegen crate
 // CODEGEN START
@@ -916,32 +995,6 @@ impl Price for Tarot {
             Self::TheWorld => 3,
         }
     }
-    fn sell_price(&self) -> u8 {
-        match self {
-            Self::TheFool => 1,
-            Self::TheMagician => 1,
-            Self::TheHighPriestess => 1,
-            Self::TheEmpress => 1,
-            Self::TheEmperor => 1,
-            Self::TheHierophant => 1,
-            Self::TheLovers => 1,
-            Self::TheChariot => 1,
-            Self::Justice => 1,
-            Self::TheHermit => 1,
-            Self::TheWheelofFortune => 1,
-            Self::Strength => 1,
-            Self::TheHangedMan => 1,
-            Self::Death => 1,
-            Self::Temperance => 1,
-            Self::TheDevil => 1,
-            Self::TheTower => 1,
-            Self::TheStar => 1,
-            Self::TheMoon => 1,
-            Self::TheSun => 1,
-            Self::Judgement => 1,
-            Self::TheWorld => 1,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -992,22 +1045,6 @@ impl Price for Planet {
             Self::PlanetX => 3,
             Self::Ceres => 3,
             Self::Eris => 3,
-        }
-    }
-    fn sell_price(&self) -> u8 {
-        match self {
-            Self::Pluto => 1,
-            Self::Mercury => 1,
-            Self::Uranus => 1,
-            Self::Venus => 1,
-            Self::Saturn => 1,
-            Self::Jupiter => 1,
-            Self::Earth => 1,
-            Self::Mars => 1,
-            Self::Neptune => 1,
-            Self::PlanetX => 1,
-            Self::Ceres => 1,
-            Self::Eris => 1,
         }
     }
 }
@@ -1078,28 +1115,6 @@ impl Price for Spectral {
             Self::Cryptid => 4,
             Self::TheSoul => 4,
             Self::BlackHole => 4,
-        }
-    }
-    fn sell_price(&self) -> u8 {
-        match self {
-            Self::Familiar => 2,
-            Self::Grim => 2,
-            Self::Incantation => 2,
-            Self::Talisman => 2,
-            Self::Aura => 2,
-            Self::Wraith => 2,
-            Self::Sigil => 2,
-            Self::Ouija => 2,
-            Self::Ectoplasm => 2,
-            Self::Immolate => 2,
-            Self::Ankh => 2,
-            Self::DejaVu => 2,
-            Self::Hex => 2,
-            Self::Trance => 2,
-            Self::Medium => 2,
-            Self::Cryptid => 2,
-            Self::TheSoul => 2,
-            Self::BlackHole => 2,
         }
     }
 }
@@ -2032,160 +2047,6 @@ impl Price for JokerType {
             Self::WrathfulJonkler => 5,
             Self::Yorick => 20,
             Self::ZanyJoker => 4,
-        }
-    }
-    fn sell_price(&self) -> u8 {
-        match self {
-            Self::EightBall => 2,
-            Self::AbstractJoker => 2,
-            Self::Acrobat => 3,
-            Self::AncientJoker => 4,
-            Self::Arrowhead => 3,
-            Self::Astronomer => 4,
-            Self::Banner => 2,
-            Self::Baron => 4,
-            Self::BaseballCard => 4,
-            Self::Blackboard => 3,
-            Self::Bloodstone => 3,
-            Self::BlueJoker => 2,
-            Self::Blueprint => 5,
-            Self::Bootstraps => 3,
-            Self::Brainstorm => 5,
-            Self::Bull => 3,
-            Self::Burglar => 3,
-            Self::BurntJoker => 4,
-            Self::BusinessCard => 2,
-            Self::Campfire => 4,
-            Self::Canio => 10,
-            Self::CardSharp => 3,
-            Self::Cartomancer => 3,
-            Self::Castle => 3,
-            Self::Cavendish => 2,
-            Self::CeremonialDagger => 3,
-            Self::Certificate => 3,
-            Self::ChaostheClown => 2,
-            Self::Chicot => 10,
-            Self::CleverJoker => 2,
-            Self::Cloud9 => 3,
-            Self::Constellation => 3,
-            Self::CraftyJoker => 2,
-            Self::CrazyJoker => 2,
-            Self::CreditCard => 1,
-            Self::DelayedGratification => 2,
-            Self::DeviousJoker => 2,
-            Self::DietCola => 3,
-            Self::DNA => 4,
-            Self::DriversLicense => 3,
-            Self::DrollJoker => 2,
-            Self::Drunkard => 2,
-            Self::Dusk => 2,
-            Self::Egg => 2,
-            Self::Erosion => 3,
-            Self::EvenSteven => 2,
-            Self::FacelessJoker => 2,
-            Self::Fibonacci => 4,
-            Self::FlashCard => 2,
-            Self::FlowerPot => 3,
-            Self::FortuneTeller => 3,
-            Self::FourFingers => 3,
-            Self::GiftCard => 3,
-            Self::GlassJoker => 3,
-            Self::GluttonousJoker => 2,
-            Self::GoldenJoker => 3,
-            Self::GoldenTicket => 2,
-            Self::GreedyJoker => 2,
-            Self::GreenJoker => 2,
-            Self::GrosMichel => 2,
-            Self::Hack => 3,
-            Self::HalfJoker => 2,
-            Self::Hallucination => 2,
-            Self::HangingChad => 2,
-            Self::Hiker => 2,
-            Self::HittheRoad => 4,
-            Self::Hologram => 3,
-            Self::IceCream => 2,
-            Self::InvisibleJoker => 4,
-            Self::Joker => 1,
-            Self::JokerStencil => 4,
-            Self::JollyJoker => 1,
-            Self::Juggler => 2,
-            Self::LoyaltyCard => 2,
-            Self::Luchador => 2,
-            Self::LuckyCat => 3,
-            Self::LustyJoker => 2,
-            Self::MadJoker => 2,
-            Self::Madness => 3,
-            Self::MailInRebate => 2,
-            Self::MarbleJoker => 3,
-            Self::Matador => 3,
-            Self::MerryAndy => 3,
-            Self::MidasMask => 3,
-            Self::Mime => 2,
-            Self::Misprint => 2,
-            Self::MrBones => 2,
-            Self::MysticSummit => 2,
-            Self::Obelisk => 4,
-            Self::OddTodd => 2,
-            Self::OnyxAgate => 3,
-            Self::OopsAll6s => 2,
-            Self::Pareidolia => 2,
-            Self::Perkeo => 10,
-            Self::Photograph => 2,
-            Self::Popcorn => 2,
-            Self::RaisedFist => 2,
-            Self::Ramen => 3,
-            Self::RedCard => 2,
-            Self::ReservedParking => 3,
-            Self::RidetheBus => 3,
-            Self::RiffRaff => 3,
-            Self::Rocket => 3,
-            Self::RoughGem => 3,
-            Self::Runner => 2,
-            Self::Satellite => 3,
-            Self::ScaryFace => 2,
-            Self::Scholar => 2,
-            Self::SeeingDouble => 3,
-            Self::Seltzer => 3,
-            Self::ShoottheMoon => 2,
-            Self::Shortcut => 3,
-            Self::Showman => 2,
-            Self::SixthSense => 3,
-            Self::SlyJoker => 1,
-            Self::SmearedJoker => 3,
-            Self::SmileyFace => 2,
-            Self::SockandBuskin => 3,
-            Self::SpaceJoker => 2,
-            Self::SpareTrousers => 3,
-            Self::Splash => 1,
-            Self::SquareJoker => 2,
-            Self::SteelJoker => 3,
-            Self::StoneJoker => 3,
-            Self::Stuntman => 3,
-            Self::Supernova => 2,
-            Self::Superposition => 2,
-            Self::Swashbuckler => 2,
-            Self::Séance => 3,
-            Self::TheDuo => 4,
-            Self::TheFamily => 4,
-            Self::TheIdol => 3,
-            Self::TheOrder => 4,
-            Self::TheTribe => 4,
-            Self::TheTrio => 4,
-            Self::Throwback => 3,
-            Self::ToDoList => 2,
-            Self::TotheMoon => 2,
-            Self::TradingCard => 3,
-            Self::Triboulet => 10,
-            Self::Troubadour => 3,
-            Self::TurtleBean => 3,
-            Self::Vagabond => 4,
-            Self::Vampire => 3,
-            Self::WalkieTalkie => 2,
-            Self::WeeJoker => 4,
-            Self::WilyJoker => 2,
-            Self::WrathfulJonkler => 2,
-            Self::Yorick => 10,
-            Self::ZanyJoker => 2,
         }
     }
 }
