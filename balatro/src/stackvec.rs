@@ -409,10 +409,10 @@ mod tests {
     #[test]
     fn remove_middle_shifts_and_len_decreases() {
         let mut sv: StackVec<i32, 8> = StackVec::new();
-        sv.push(10);
-        sv.push(20);
-        sv.push(30);
-        sv.push(40);
+        sv.push(10).unwrap();
+        sv.push(20).unwrap();
+        sv.push(30).unwrap();
+        sv.push(40).unwrap();
         assert_eq!(sv.len(), 4);
 
         // remove element "20" at index 1
@@ -427,9 +427,9 @@ mod tests {
     #[test]
     fn remove_last_is_ok_and_no_shift_needed() {
         let mut sv: StackVec<i32, 8> = StackVec::new();
-        sv.push(1);
-        sv.push(2);
-        sv.push(3);
+        sv.push(1).unwrap();
+        sv.push(2).unwrap();
+        sv.push(3).unwrap();
         assert_eq!(sv.len(), 3);
 
         // remove last (index 2)
@@ -500,10 +500,10 @@ mod tests {
     #[test]
     fn remove_preserves_invariants() {
         let mut sv: StackVec<i32, 8> = StackVec::new();
-        sv.push(1);
-        sv.push(2);
-        sv.push(3);
-        sv.push(4);
+        sv.push(1).unwrap();
+        sv.push(2).unwrap();
+        sv.push(3).unwrap();
+        sv.push(4).unwrap();
         assert_eq!(sv.remove(1), Some(2));
         assert_eq!(sv.len(), 3);
 

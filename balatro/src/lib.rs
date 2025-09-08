@@ -642,7 +642,7 @@ impl Deck {
             }
             Self::Erratic => {
                 let mut deck = StackVec::new();
-                for i in 0..deck.len() {
+                for _ in 0..deck.len() {
                     let suit = PlayingCardSuit::random(rng);
                     let rank = PlayingCardRank::random(rng);
                     deck.push((suit, rank).into()).unwrap();
