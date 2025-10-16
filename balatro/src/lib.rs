@@ -189,7 +189,7 @@ impl Game {
                     }
                     _ => break 'res None,
                 },
-                Action::SellJoker(index) => match state {
+                Action::SellJoker(index) | Action::SellConsumable(index) => match state {
                     GameState::SelectingBlind(SelectingBlind {
                         ref mut in_game, ..
                     })
@@ -200,34 +200,36 @@ impl Game {
                     | GameState::InShop(InShop {
                         ref mut in_game, ..
                     }) => {
-                        let Some(joker) = in_game.jokers.remove(index) else {
-                            break 'res None;
+                        fn sell<T: Price, const N: usize>(
+                            cost_multiplier: f32,
+                            collection: &mut StackVec<T, N>,
+                            index: usize,
+                            money: &mut u32,
+                        ) -> Option<()> {
+                            let item = collection.remove(index)?;
+                            *money += (item.sell_price() as f32 * cost_multiplier) as u32;
+
+                            Some(())
+                        }
+                        match action {
+                            Action::SellJoker(_) => sell(
+                                in_game.cost_multiplier(),
+                                &mut in_game.jokers,
+                                index,
+                                &mut in_game.money,
+                            ),
+                            Action::SellConsumable(_) => sell(
+                                in_game.cost_multiplier(),
+                                &mut in_game.consumables,
+                                index,
+                                &mut in_game.money,
+                            ),
+                            _ => unreachable!(),
                         };
-                        in_game.money +=
-                            (joker.sell_price() as f32 * in_game.cost_multiplier()) as u32;
                     }
                     _ => break 'res None,
                 },
                 Action::UseConsumable(_, _) => todo!(),
-                Action::SellConsumable(index) => match state {
-                    GameState::SelectingBlind(SelectingBlind {
-                        ref mut in_game, ..
-                    })
-                    | GameState::InRound(InRound {
-                        ref mut in_game, ..
-                    })
-                    | GameState::CashingOut(CashingOut { ref mut in_game })
-                    | GameState::InShop(InShop {
-                        ref mut in_game, ..
-                    }) => {
-                        let Some(consumable) = in_game.consumables.remove(index) else {
-                            break 'res None;
-                        };
-                        in_game.money +=
-                            (consumable.sell_price() as f32 * in_game.cost_multiplier()) as u32;
-                    }
-                    _ => break 'res None,
-                },
                 Action::BuyShopCard(_) => todo!(),
                 Action::RedeemVoucher(_) => todo!(),
                 Action::OpenPack(_) => todo!(),
