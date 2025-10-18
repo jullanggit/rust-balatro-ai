@@ -7,6 +7,7 @@
 #![feature(generic_const_exprs)]
 #![feature(variant_count)]
 #![feature(macro_metavar_expr_concat)]
+#![feature(array_try_from_fn)]
 
 use crate::stackvec::{Len, StackVec};
 use core::mem::{self, Assume, TransmuteFrom};
@@ -425,7 +426,7 @@ pub trait Name {
     fn name(&self) -> &'static str;
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Joker {
     joker_type: JokerType,
     edition: Option<Edition>,
@@ -482,7 +483,7 @@ impl JokerCompatibility {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub enum Edition {
     Foil,
     Holographic,
@@ -645,7 +646,7 @@ pub enum Seal {
     Purple,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub enum Sticker {
     Eternal,
     Perishable,
@@ -1135,7 +1136,7 @@ impl Price for Spectral {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub enum JokerType {
     EightBall,
     AbstractJoker,
