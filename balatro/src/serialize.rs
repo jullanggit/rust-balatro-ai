@@ -15,18 +15,27 @@ where
 }
 
 macro_rules! Serialize {
-    derive() (
+    attr($($fn:ident),*) (
         $(#[repr(u8)])?
         $(#[doc = $_l1:literal])?
-        $(pub)? enum $Enum:ident {
+        $pub:vis enum $Enum:ident {
             $(
                 $(#[doc = $_l2:literal])?
                 $(#[default])?
                 $Variant:ident $(($Data:ident))?,
             )*
     }) => {
-        impl Serialize for $Enum {
-            const LEN: usize = {
+        $pub enum $Enum {
+            $(
+                $Variant $(($Data))?,
+            )*
+        }
+
+        mod ${concat(__, $Enum, _serialization)} {
+            use super::*;
+
+            pub const fn max_len() -> usize {
+                #[allow(unused_mut)]
                 let mut max = 0;
                 $($(
                     let len = <$Data as Serialize>::LEN;
@@ -35,16 +44,33 @@ macro_rules! Serialize {
                     }
                 )?)*
 
-                max + core::mem::variant_count::<$Enum>()
+                max
+            }
+        }
+
+        impl Serialize for $Enum {
+            const LEN: usize = {
+                let max = ${concat(__, $Enum, _serialization)}::max_len();
+
+                // uses generics for the return types of the functions, to let the type system infer them
+                const fn get_fns_len<$(${concat($fn, _type)}: Serialize),*>
+                    ($($fn: fn (&$Enum) -> ${concat($fn, _type)}),*) -> usize
+                {
+                    $(${concat($fn, _type)}::LEN + )* 0
+                }
+
+                core::mem::variant_count::<$Enum>() + max + get_fns_len($($Enum::$fn),*)
             };
 
-            #[expect(non_snake_case)]
+            #[allow(non_snake_case)]
             fn serialize(&self) -> [TensorElement; Self::LEN] {
                 let mut initial = [0.0; _];
 
+                #[allow(unused_assignments)] // the last num += 1
                 fn discriminant(value: &$Enum) -> usize {
                     let mut num = 0;
                     $(
+                        #[allow(unused_variables)]
                         if matches!(value, $Enum::$Variant $(($Data))?) {
                             return num;
                         } else {
@@ -57,6 +83,7 @@ macro_rules! Serialize {
 
                 initial[discriminant(self)] = 1.0;
 
+                #[allow(unused_mut)]
                 let mut offset = core::mem::variant_count::<$Enum>();
 
                 match self {
@@ -70,6 +97,20 @@ macro_rules! Serialize {
                     )*
                 }
 
+                // uses generics for the return types of the functions, to let the type system infer them
+                fn encode_fns<$(${concat($fn, _type)}: Serialize),*>
+                    (value: &$Enum, mut offset: usize, out: &mut [TensorElement; $Enum::LEN], $($fn: fn (&$Enum) -> ${concat($fn, _type)}),*)
+                {
+                    $(
+                        let len = ${concat($fn, _type)}::LEN;
+
+                        out[offset..offset + len].copy_from_slice(&Serialize::serialize(&value.$fn()));
+
+                        offset += len;
+                    )*
+                }
+                encode_fns(self, offset + ${concat(__, $Enum, _serialization)}::max_len(), &mut initial, $($Enum::$fn),*);
+
                 initial
             }
             fn deserialize(value: &[TensorElement; Self::LEN]) -> Option<Self> {
@@ -77,10 +118,11 @@ macro_rules! Serialize {
 
                 $(
                     if value[i] == 1. {
+                        let offset = core::mem::variant_count::<$Enum>();
                         return Some(
                             $Enum::$Variant $(
                                 // TODO: maybe do this without round-trip to slices and expect()
-                                ($Data::deserialize(&value[core::mem::variant_count::<$Enum>()..].try_into().expect("Lengths should match"))?)
+                                ($Data::deserialize(&value[offset..offset + $Data::LEN].try_into().expect("Lengths should match"))?)
                             )?
                         )
                     }
@@ -91,16 +133,31 @@ macro_rules! Serialize {
             }
         }
     };
-    derive() (
+    attr($($fn:ident),*) (
         $(#[doc = $_l1:literal])?
-        $(pub)? struct $Struct:ident {
+        $pub:vis struct $Struct:ident {
             $(
                 $(#[doc = $_l2:literal])?
                 $vis:vis $field:ident: $ty:ty,
             )*
     }) => {
+        $pub struct $Struct {
+            $(
+                $vis $field: $ty,
+            )*
+        }
+
         impl Serialize for $Struct {
-            const LEN: usize = $(<$ty as Serialize>::LEN +)* 0;
+            const LEN: usize = {
+                // uses generics for the return types of the functions, to let the type system infer them
+                const fn get_fns_len<$(${concat($fn, _type)}: Serialize),*>
+                    ($($fn: fn (&$Struct) -> ${concat($fn, _type)}),*) -> usize
+                {
+                    $(${concat($fn, _type)}::LEN + )* 0
+                }
+
+                $(<$ty as Serialize>::LEN +)* get_fns_len($($Struct::$fn),*)
+            };
 
             fn serialize(&self) -> [TensorElement; Self::LEN] {
                 let mut initial = [0.0; _];
@@ -114,6 +171,20 @@ macro_rules! Serialize {
 
                     offset += len;
                 )*
+
+                // uses generics for the return types of the functions, to let the type system infer them
+                fn encode_fns<$(${concat($fn, _type)}: Serialize),*>
+                    (value: &$Struct, mut offset: usize, out: &mut [TensorElement; $Struct::LEN], $($fn: fn (&$Struct) -> ${concat($fn, _type)}),*)
+                {
+                    $(
+                        let len = ${concat($fn, _type)}::LEN;
+
+                        out[offset..offset + len].copy_from_slice(&Serialize::serialize(&value.$fn()));
+
+                        offset += len;
+                    )*
+                }
+                encode_fns(self, offset, &mut initial, $($Struct::$fn),*);
 
                 initial
             }

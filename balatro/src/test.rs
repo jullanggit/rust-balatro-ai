@@ -17,31 +17,49 @@ fn test_random_bossblind() {
 
 #[test]
 fn test_serialization() {
-    #[derive(Serialize)]
+    #[derive(Debug, PartialEq)]
+    #[Serialize(encode_me)]
     pub enum Enum {
         A(u8),
         B,
         C,
         D,
     }
-    assert_eq!(<Enum as Serialize>::LEN, 5);
-    assert_eq!(Serialize::serialize(&Enum::A(12)), [1., 0., 0., 0., 12.]);
+    impl Enum {
+        fn encode_me(&self) -> u8 {
+            3
+        }
+    }
+    assert_eq!(<Enum as Serialize>::LEN, 6);
+    let start = Enum::A(12);
+    let serialized = Serialize::serialize(&start);
+    assert_eq!(serialized, [1., 0., 0., 0., 12., 3.]);
+    assert_eq!(Serialize::deserialize(&serialized), Some(start));
 
-    #[derive(Serialize)]
+    #[derive(Debug, PartialEq)]
+    #[Serialize(also_encode)]
     pub struct Struct {
         a: u8,
         b: f32,
         c: [usize; 3],
         d: Enum,
     }
-    assert_eq!(<Struct as Serialize>::LEN, 10);
+    impl Struct {
+        fn also_encode(&self) -> f32 {
+            self.b.sqrt()
+        }
+    }
+    assert_eq!(<Struct as Serialize>::LEN, 12);
+    let start = Struct {
+        a: 5,
+        b: 36.,
+        c: [0, 1, 2],
+        d: Enum::A(38),
+    };
+    let serialized = Serialize::serialize(&start);
     assert_eq!(
-        Serialize::serialize(&Struct {
-            a: 5,
-            b: 32.,
-            c: [0, 1, 2],
-            d: Enum::A(38),
-        }),
-        [5., 32., 0., 1., 2., 1., 0., 0., 0., 38.]
+        serialized,
+        [5., 36., 0., 1., 2., 1., 0., 0., 0., 38., 3., 6.]
     );
+    assert_eq!(Serialize::deserialize(&serialized), Some(start));
 }
