@@ -355,7 +355,7 @@ pub struct InShop {
 }
 /// State that is present after selecting Blind and Stake
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(cost_multiplier)]
 pub struct InGame {
     deck: Deck,
     stake: Stake,
@@ -436,7 +436,7 @@ pub trait Name {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[Serialize]
+#[Serialize(buy_price, sell_price)]
 pub struct Joker {
     joker_type: JokerType,
     edition: Option<Edition>,
@@ -524,7 +524,7 @@ pub enum Rarity {
 }
 
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(buy_price, sell_price)]
 pub enum Consumable {
     Tarot(Tarot),
     Planet(Planet),
@@ -585,7 +585,7 @@ impl PlayingCardSuit {
 }
 
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(is_face, is_numbered, is_even, is_odd)]
 pub enum PlayingCardRank {
     Ace,
     Two,
@@ -911,7 +911,7 @@ pub enum Tag {
 macro_rules! Voucher {
     ($(($base:ident$(($ty:ident))?, $upgrade:ident)),+) => {
         #[derive(Debug, PartialEq )]
-#[Serialize]
+        #[Serialize(buy_price, sell_price)]
         pub enum Voucher {
             $(
                 $base$(($ty))?,
@@ -959,7 +959,7 @@ impl Price for Voucher {
 // see codegen crate
 // CODEGEN START
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(buy_price, sell_price)]
 pub enum Tarot {
     TheFool,
     TheMagician,
@@ -1042,7 +1042,7 @@ impl Price for Tarot {
 }
 
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(buy_price, sell_price)]
 pub enum Planet {
     Pluto,
     Mercury,
@@ -1095,7 +1095,7 @@ impl Price for Planet {
 }
 
 #[derive(Debug)]
-#[Serialize]
+#[Serialize(buy_price, sell_price)]
 pub enum Spectral {
     Familiar,
     Grim,
@@ -1166,7 +1166,7 @@ impl Price for Spectral {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[Serialize]
+#[Serialize(rarity, effect_type, compatibility)]
 pub enum JokerType {
     EightBall,
     AbstractJoker,
