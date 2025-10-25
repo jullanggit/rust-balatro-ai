@@ -1,7 +1,7 @@
 use fastrand::Rng;
 
 use crate::{
-    BossBlind,
+    BossBlind, Hand, MAX_PLAYED_HAND_CARDS, PlayingCard, PlayingCardRank, PlayingCardSuit,
     serialize::{Serialize, TensorElement},
 };
 
@@ -62,4 +62,85 @@ fn test_serialization() {
         [5., 36., 0., 1., 2., 1., 0., 0., 0., 38., 3., 6.]
     );
     assert_eq!(Serialize::deserialize(&serialized), Some(start));
+}
+
+fn test_playing_card_hand() {
+    use PlayingCardRank::*;
+    use PlayingCardSuit::*;
+    let cards = [
+        (
+            [
+                (Hearts, Ace),
+                (Clubs, Two),
+                (Hearts, Three),
+                (Diamonds, Four),
+                (Diamonds, Five),
+            ],
+            (Hand::Straight, [true; MAX_PLAYED_HAND_CARDS]),
+        ),
+        (
+            [
+                (Hearts, Ace),
+                (Hearts, Two),
+                (Hearts, Three),
+                (Hearts, Four),
+                (Hearts, Five),
+            ],
+            (Hand::StraightFlush, [true; MAX_PLAYED_HAND_CARDS]),
+        ),
+        (
+            [
+                (Hearts, Ace),
+                (Hearts, King),
+                (Hearts, Five),
+                (Hearts, Four),
+                (Hearts, Five),
+            ],
+            (Hand::Flush, [true; MAX_PLAYED_HAND_CARDS]),
+        ),
+        (
+            [
+                (Hearts, Ace),
+                (Hearts, Ace),
+                (Spades, Five),
+                (Hearts, Four),
+                (Clubs, Five),
+            ],
+            (Hand::TwoPair, [true, true, true, false, true]),
+        ),
+        (
+            [
+                (Hearts, Ace),
+                (Hearts, Ace),
+                (Spades, Five),
+                (Hearts, Five),
+                (Clubs, Five),
+            ],
+            (Hand::FullHouse, [true; MAX_PLAYED_HAND_CARDS]),
+        ),
+        (
+            [
+                (Hearts, Ace),
+                (Hearts, Ace),
+                (Spades, Ace),
+                (Hearts, Ace),
+                (Clubs, Ace),
+            ],
+            (Hand::FiveOfAKind, [true; MAX_PLAYED_HAND_CARDS]),
+        ),
+        (
+            [
+                (Hearts, King),
+                (Hearts, Ace),
+                (Spades, Four),
+                (Hearts, Three),
+                (Clubs, Jack),
+            ],
+            (Hand::HighCard, [false, true, false, false, false]),
+        ),
+    ];
+    for (cards, expected) in cards {
+        let cards = cards.map(|card| card.into());
+        assert_eq!(PlayingCard::hand(cards.iter().collect()), expected);
+    }
 }

@@ -9,9 +9,14 @@
 #![feature(macro_metavar_expr_concat)]
 #![feature(array_try_from_fn)]
 #![feature(macro_attr)]
+#![feature(array_windows)]
 
 use crate::stackvec::{Len, StackVec};
-use core::mem::{self, Assume, TransmuteFrom};
+use core::{
+    array,
+    mem::{self, Assume, TransmuteFrom},
+    ops::{Deref, Index, IndexMut},
+};
 use fastrand::Rng;
 use serialize::{Serialize, TensorElement};
 
@@ -22,6 +27,7 @@ pub mod stackvec;
 mod test;
 
 const MAX_CONSUMABLES: usize = 25;
+const MAX_PLAYED_HAND_CARDS: usize = 5;
 const MAX_DECK_CARDS: usize = 100;
 const MAX_JOKERS: usize = 15;
 const MAX_HAND_CARDS: usize = 20;
@@ -93,7 +99,7 @@ impl Game {
 
                         let mut in_round = InRound {
                             hand_card_indices: StackVec::new(),
-                            discarded_card_indices: StackVec::new(),
+                            used_card_indices: StackVec::new(),
                             in_game,
                         };
 
@@ -151,16 +157,61 @@ impl Game {
                         _ => break 'res None,
                     }
                 }
-                Action::PlayHand(_) => todo!(),
+                Action::PlayHand(hand_card_indices) => match &mut state {
+                    GameState::InRound(in_round) => {
+                        // - remove played cards from hand cards
+                        // - TODO: rename discarded cards to used cards
+                        // - add them to used cards
+                        // - score
+                        // - draw new cards
+
+                        assert!(
+                            hand_card_indices
+                                .iter()
+                                .all(|index| in_round.hand_card_indices.contains(index))
+                        );
+
+                        let mut played_cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS> =
+                            StackVec::new();
+                        for index in hand_card_indices.iter() {
+                            played_cards
+                                .push(&in_round.in_game.deck_cards[*index as usize])
+                                .unwrap();
+
+                            InRound::mark_hand_card_as_used(
+                                &mut in_round.hand_card_indices,
+                                &mut in_round.used_card_indices,
+                                *index,
+                            )
+                            .expect("We check that all indices are contained");
+                        }
+
+                        let (hand, included) = PlayingCard::hand(played_cards);
+                        let (mut chips, mut mult) = in_round.in_game.hand_levels.chips_mult(hand);
+
+                        for (index, included) in included.into_iter().enumerate() {
+                            if included {
+                                let card = played_cards[index];
+                            }
+                        }
+
+                        todo!();
+                    }
+                    _ => break 'res None,
+                },
                 Action::DiscardHand(discard_indices) => {
                     match &mut state {
-                        GameState::InRound(in_round) => {
+                        GameState::InRound(in_round) if in_round.discards_remaining > 0 => {
                             // move cards from hand to discarded
                             for index in discard_indices.iter() {
-                                let Some(item) = in_round.hand_card_indices.remove(*index) else {
+                                // TODO: purple seal
+                                let Some(()) = InRound::mark_hand_card_as_used(
+                                    &mut in_round.hand_card_indices,
+                                    &mut in_round.used_card_indices,
+                                    *index,
+                                ) else {
                                     break 'res None;
                                 };
-                                in_round.discarded_card_indices.push(item).expect("Capacities of deck_cards and discarded_card_indices match, so item should always fit");
                             }
                             // draw new cards
                             let num_to_draw =
@@ -302,8 +353,9 @@ pub struct SelectingBlind {
 #[Serialize]
 pub struct InRound {
     in_game: InGame,
-    hand_card_indices: StackVec<u8, MAX_HAND_CARDS>,
-    discarded_card_indices: StackVec<u8, MAX_DECK_CARDS>,
+    hand_card_indices: HandCardIndices,
+    used_card_indices: DeckCardIndices,
+    discards_remaining: u8,
 }
 impl InRound {
     #[must_use = "Should handle error"]
@@ -313,8 +365,7 @@ impl InRound {
         let in_deck_indices: StackVec<u8, MAX_DECK_CARDS> = (0..self.in_game.deck_cards.len()
             as u8)
             .filter(|index| {
-                !(self.hand_card_indices.contains(index)
-                    || self.discarded_card_indices.contains(index))
+                !(self.hand_card_indices.contains(index) || self.used_card_indices.contains(index))
             })
             .collect();
 
@@ -339,6 +390,19 @@ impl InRound {
         }
         num
     }
+    /// Returns none if index is not in hand
+    fn mark_hand_card_as_used(
+        hand_card_indices: &mut HandCardIndices,
+        discarded_card_indices: &mut DeckCardIndices,
+        index: u8,
+    ) -> Option<()> {
+        let item = hand_card_indices.remove(index as usize)?;
+        discarded_card_indices.push(item).expect(
+            "Capacities of deck_cards and discarded_card_indices match, so item should always fit",
+        );
+
+        Some(())
+    }
 }
 /// State that is present while cashing out
 #[derive(Debug)]
@@ -362,16 +426,18 @@ pub struct InGame {
     blind_progress: BlindProgress,
     boss_blind: BossBlind,
     blind_tags: [Tag; 2],
-    money: u32,
+    money: i32,
     hands: u8,
     discards: u8,
     jokers: StackVec<Joker, MAX_JOKERS>,
+    joker_slots: u8,
     consumables: StackVec<Consumable, MAX_CONSUMABLES>,
     vouchers: StackVec<Voucher, MAX_CONSUMABLES>,
     tags_to_use: StackVec<Tag, MAX_TAGS>,
     ante: Ante,
     deck_cards: DeckCards,
     hand_size: u8,
+    hand_levels: HandLevels,
 }
 impl InGame {
     fn cost_multiplier(&self) -> f32 {
@@ -392,7 +458,9 @@ pub struct PackState {}
 
 type Ante = u8;
 type DeckCards = StackVec<PlayingCard, MAX_DECK_CARDS>;
-type DeckCardIndices = StackVec<usize, MAX_DECK_CARDS>;
+type DeckCardIndices = StackVec<u8, MAX_DECK_CARDS>;
+type HandCardIndices = StackVec<u8, MAX_HAND_CARDS>;
+type PlayedHandCardIndices = StackVec<u8, MAX_PLAYED_HAND_CARDS>;
 type UseConsumable = (usize, DeckCardIndices);
 type PackIndices = StackVec<usize, MAX_PACK_ITEMS>;
 type MoveJoker = [usize; 2];
@@ -406,9 +474,9 @@ pub enum Action {
     SkipBlind,
     RerollBossBlind,
     /// Play the hand containing the cards at the indices contained in the vec, in the order of the vec
-    PlayHand(DeckCardIndices),
+    PlayHand(PlayedHandCardIndices),
     /// Discard the hand containing the cards at the indices contained in the vec
-    DiscardHand(DeckCardIndices),
+    DiscardHand(PlayedHandCardIndices),
     /// [current position, new position]
     MoveJoker(MoveJoker),
     SellJoker(usize),
@@ -445,6 +513,125 @@ pub struct Joker {
 impl Price for Joker {
     fn buy_price(&self) -> u8 {
         self.joker_type.buy_price() + self.edition.as_ref().map_or(0, Price::buy_price)
+    }
+}
+// TODO:
+// - Four Fingers
+// - Mime
+// - Credit Card
+// - Dusk
+impl Joker {
+    /// On the final triggering of all jokers, without an "event"
+    fn on_triggered(
+        &self,
+        chips: &mut f32,
+        mult: &mut f32,
+        in_round: &mut InRound,
+        played_cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        rng: &mut Rng,
+    ) {
+        use JokerType::*;
+
+        match &mut self.joker_type {
+            Joker => *mult += 4.,
+            HalfJoker if played_cards.len() <= 3 => *mult += 20,
+            JokerStencil => {
+                *mult *= 1 + in_round.in_game.joker_slots - in_round.in_game.jokers.len()
+            }
+            Banner => *chips += 30 * in_round.discards_remaining,
+            MysticSummit if in_round.discards_remaining == 0 => *mult += 15,
+            LoyaltyCard(remaining) => match remaining {
+                0 => {
+                    *mult *= 4;
+                    *remaining = 5
+                }
+                1..=5 => *remaining -= 1,
+                _ => unreachable!(),
+            },
+            Misprint => *mult += rng.u8(..=23),
+            // TODO: do once we move away from indices
+            // RaisedFist => *mult += 2 * in_round.hand_card_indices,
+            _ => {}
+        }
+    }
+    fn on_card_scored(&self, card: &PlayingCard, hand: Hand, chips: &mut f32, mult: &mut f32) {
+        use Hand::*;
+        use JokerType::*;
+        use PlayingCardSuit::*;
+
+        macro_rules! suit_joker {
+            ($($joker:ident - $suit:ident),*) => {
+                match self.joker_type {
+                    $(
+                        $joker if card.suit == $suit => *mult += 3.,
+                    )*
+                    _ => {}
+                };
+            };
+        }
+        suit_joker!(
+            GreedyJoker - Diamonds,
+            LustyJoker - Hearts,
+            WrathfulJoker - Spades,
+            GluttonousJoker - Clubs
+        );
+
+        macro_rules! hand_joker {
+            ($($joker:ident - $hand:ident - $(m $mult:literal)? $(c $chips:literal)?),*) => {
+                match self.joker_type {
+                    $(
+                        $joker if hand == $hand => $(*mult += $mult)? $(*chips += $chips)?,
+                    )*
+                    _ => {}
+                }
+            };
+        }
+        hand_joker!(
+            JollyJoker - Pair - m 8.,
+            ZanyJoker - ThreeOfAKind - m 12.,
+            MadJoker - TwoPair - m 10.,
+            CrazyJoker - Straight - m 12.,
+            DrollJoker - Flush - m 10.,
+            SlyJoker - Pair - c 50.,
+            WilyJoker - ThreeOfAKind - c 100.,
+            CleverJoker - TwoPair - c 80.,
+            DeviousJoker - Straight - c 100.,
+            CraftyJoker - Flush - c 80.
+        );
+
+        match self.joker_type {
+            // TODO: create tarot
+            EightBall if card.rank == PlayingCardRank::Eight => {}
+        }
+    }
+    fn on_hand_played(&self, chips: &mut f32, mult: &mut f32, in_game: &mut InGame) {
+        use JokerType::*;
+
+        match self.joker_type {
+            _ => {}
+        }
+    }
+    fn on_round_entered(
+        &self,
+        chips: &mut f32,
+        mult: &mut f32,
+        in_game: &mut InGame,
+        joker_index: usize,
+    ) {
+        use JokerType::*;
+
+        match self.joker_type {
+            CeremonialDagger => {
+                in_game.jokers.remove(joker_index);
+            }
+            MarbleJoker => {
+                in_game.deck_cards.push(PlayingCard {
+                    enhancement: Some(Enhancement::Stone),
+                    ..Default::default()
+                });
+            }
+            _ => {}
+        }
     }
 }
 
@@ -550,6 +737,92 @@ pub struct PlayingCard {
     seal: Option<Seal>,
     sticker: Option<Sticker>,
 }
+impl PlayingCard {
+    fn hand(
+        cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+    ) -> (Hand, [bool; MAX_PLAYED_HAND_CARDS]) {
+        let (mut best_hand, mut included);
+
+        let mut cards: StackVec<_, MAX_PLAYED_HAND_CARDS> = cards.iter().enumerate().collect();
+        cards.sort_unstable_by_key(|(_, card)| card.rank);
+
+        // n-of-a-kinds
+        let mut n_of_a_kinds = StackVec::<
+            (PlayingCardRank, [bool; MAX_PLAYED_HAND_CARDS]),
+            MAX_PLAYED_HAND_CARDS,
+        >::new();
+
+        let mut last_rank = None;
+        for card in &cards.deref()[1..] {
+            if Some(card.1.rank) == last_rank {
+                let len = n_of_a_kinds.len();
+                n_of_a_kinds[len].1[card.0] = true;
+            } else {
+                last_rank = Some(card.1.rank);
+                n_of_a_kinds
+                    .push((card.1.rank, array::from_fn(|i| i == card.0)))
+                    .unwrap();
+            }
+        }
+        let num_ones = |array: [bool; MAX_PLAYED_HAND_CARDS]| array.iter().filter(|i| **i).count();
+        n_of_a_kinds.sort_unstable_by(|a, b| num_ones(a.1).cmp(&num_ones(b.1)).reverse());
+
+        let combine = |a: [bool; _], b: [bool; _]| array::from_fn(|i| a[i] || b[i]);
+
+        (best_hand, included) = match (
+            num_ones(n_of_a_kinds[0].1),
+            n_of_a_kinds.get(1).map(|e| num_ones(e.1)),
+        ) {
+            (5, _) => (Hand::FiveOfAKind, n_of_a_kinds[0].1),
+            (4, _) => (Hand::FourOfAKind, n_of_a_kinds[0].1),
+            (3, Some(2)) => (
+                Hand::FullHouse,
+                combine(n_of_a_kinds[0].1, n_of_a_kinds[1].1),
+            ),
+            (3, _) => (Hand::ThreeOfAKind, n_of_a_kinds[0].1),
+            (2, Some(2)) => (Hand::TwoPair, combine(n_of_a_kinds[0].1, n_of_a_kinds[1].1)),
+            (2, _) => (Hand::Pair, n_of_a_kinds[0].1),
+            (1, _) => (Hand::HighCard, n_of_a_kinds[0].1),
+            _ => unreachable!(),
+        };
+
+        let is_consecutive =
+            |[a, b]: &[(_, &&PlayingCard); 2]| a.1.rank as u8 + 1 == b.1.rank as u8;
+        let is_straight = cards.array_windows().all(is_consecutive) // simple case
+            // low ace
+            || (cards.get(MAX_PLAYED_HAND_CARDS - 1).map(|card| card.1.rank)
+                == Some(PlayingCardRank::Ace)
+                &&
+                cards.deref()[1..].array_windows()
+                    .all(is_consecutive));
+        if is_straight && Hand::Straight > best_hand {
+            (best_hand, included) = (Hand::Straight, [true; MAX_PLAYED_HAND_CARDS]);
+        }
+
+        let is_flush = cards.array_windows().all(|[a, b]| a.1.suit == b.1.suit);
+
+        if is_flush {
+            best_hand = match best_hand {
+                Hand::FiveOfAKind => Hand::FlushFive,
+                Hand::FullHouse => Hand::FlushHouse,
+                Hand::Straight => {
+                    if cards[4].1.rank == PlayingCardRank::Ace {
+                        Hand::RoyalFlush
+                    } else {
+                        Hand::StraightFlush
+                    }
+                }
+                other if other >= Hand::Flush => {
+                    included = [true; MAX_PLAYED_HAND_CARDS];
+                    other
+                }
+                other => other,
+            };
+        }
+
+        (best_hand, included)
+    }
+}
 impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
     fn from((suit, rank): (PlayingCardSuit, PlayingCardRank)) -> Self {
         Self {
@@ -584,10 +857,10 @@ impl PlayingCardSuit {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[repr(u8)]
 #[Serialize(is_face, is_numbered, is_even, is_odd)]
 pub enum PlayingCardRank {
-    Ace,
     Two,
     Three,
     Four,
@@ -600,6 +873,7 @@ pub enum PlayingCardRank {
     Jack,
     Queen,
     King,
+    Ace,
 }
 impl PlayingCardRank {
     const NUM_VARIANTS: u8 = 13;
@@ -641,6 +915,65 @@ impl PlayingCardRank {
             self,
             Self::Ace | Self::Three | Self::Five | Self::Seven | Self::Nine
         )
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, PartialEq, PartialOrd)]
+#[Serialize]
+pub enum Hand {
+    HighCard,
+    Pair,
+    TwoPair,
+    ThreeOfAKind,
+    Straight,
+    Flush,
+    FullHouse,
+    FourOfAKind,
+    StraightFlush,
+    RoyalFlush,
+    FiveOfAKind,
+    FlushHouse,
+    FlushFive,
+}
+
+/// [level; Hand]
+struct HandLevels([u8; mem::variant_count::<Hand>()]);
+impl HandLevels {
+    // (chips, mult) of a given hand at the stored level
+    fn chips_mult(&self, hand: Hand) -> (f32, f32) {
+        use Hand::*;
+
+        let level = self[hand] as f32;
+        let (base_mult, base_chips, scale_mult, scale_chips) = match hand {
+            HighCard => (1, 5, 1, 15),
+            Pair => (2, 10, 1, 15),
+            TwoPair => (2, 20, 1, 20),
+            ThreeOfAKind => (3, 30, 2, 20),
+            Straight => (4, 30, 3, 30),
+            Flush => (4, 35, 2, 15),
+            FullHouse => (4, 40, 2, 25),
+            FourOfAKind => (7, 60, 3, 30),
+            StraightFlush | RoyalFlush => (8, 100, 4, 40),
+            FiveOfAKind => (12, 120, 3, 35),
+            FlushHouse => (14, 140, 4, 40),
+            FlushFive => (16, 160, 3, 50),
+        };
+        (
+            base_mult as f32 + scale_mult as f32 * level,
+            base_chips as f32 * scale_chips as f32 * level,
+        )
+    }
+}
+impl Index<Hand> for HandLevels {
+    type Output = u8;
+    fn index(&self, index: Hand) -> &Self::Output {
+        &self.0[index as u8 as usize]
+    }
+}
+impl IndexMut<Hand> for HandLevels {
+    fn index_mut(&mut self, index: Hand) -> &mut Self::Output {
+        &mut self.0[index as u8 as usize]
     }
 }
 
@@ -1241,7 +1574,7 @@ pub enum JokerType {
     JokerStencil,
     JollyJoker,
     Juggler,
-    LoyaltyCard,
+    LoyaltyCard(u8),
     Luchador,
     LuckyCat,
     LustyJoker,
@@ -1315,7 +1648,7 @@ pub enum JokerType {
     WalkieTalkie,
     WeeJoker,
     WilyJoker,
-    WrathfulJonkler,
+    WrathfulJoker,
     Yorick,
     ZanyJoker,
 }
@@ -1469,7 +1802,7 @@ impl JokerType {
             Self::WalkieTalkie => Rarity::Common,
             Self::WeeJoker => Rarity::Rare,
             Self::WilyJoker => Rarity::Common,
-            Self::WrathfulJonkler => Rarity::Common,
+            Self::WrathfulJoker => Rarity::Common,
             Self::Yorick => Rarity::Legendary,
             Self::ZanyJoker => Rarity::Common,
         }
@@ -1625,7 +1958,7 @@ impl JokerType {
             Self::WalkieTalkie => JokerEffectType::new(false, true, false, false, false, false),
             Self::WeeJoker => JokerEffectType::new(true, false, false, false, false, false),
             Self::WilyJoker => JokerEffectType::new(true, false, false, false, false, false),
-            Self::WrathfulJonkler => JokerEffectType::new(false, true, false, false, false, false),
+            Self::WrathfulJoker => JokerEffectType::new(false, true, false, false, false, false),
             Self::Yorick => JokerEffectType::new(false, false, true, false, false, false),
             Self::ZanyJoker => JokerEffectType::new(false, true, false, false, false, false),
         }
@@ -1779,7 +2112,7 @@ impl JokerType {
             Self::WalkieTalkie => JokerCompatibility::new(true, true, true),
             Self::WeeJoker => JokerCompatibility::new(true, false, true),
             Self::WilyJoker => JokerCompatibility::new(true, true, true),
-            Self::WrathfulJonkler => JokerCompatibility::new(true, true, true),
+            Self::WrathfulJoker => JokerCompatibility::new(true, true, true),
             Self::Yorick => JokerCompatibility::new(true, true, true),
             Self::ZanyJoker => JokerCompatibility::new(true, true, true),
         }
@@ -1935,7 +2268,7 @@ impl Name for JokerType {
             Self::WalkieTalkie => "Walkie Talkie",
             Self::WeeJoker => "Wee Joker",
             Self::WilyJoker => "Wily Joker",
-            Self::WrathfulJonkler => "Wrathful Jonkler",
+            Self::WrathfulJoker => "Wrathful Jonkler",
             Self::Yorick => "Yorick",
             Self::ZanyJoker => "Zany Joker",
         }
@@ -2091,7 +2424,7 @@ impl Price for JokerType {
             Self::WalkieTalkie => 4,
             Self::WeeJoker => 8,
             Self::WilyJoker => 4,
-            Self::WrathfulJonkler => 5,
+            Self::WrathfulJoker => 5,
             Self::Yorick => 20,
             Self::ZanyJoker => 4,
         }

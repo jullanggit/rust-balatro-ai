@@ -1,6 +1,6 @@
 use crate::{
-    Consumable, Edition, Enhancement, Joker, MAX_DECK_CARDS, PackState, PlayingCard, Seal, Sticker,
-    Tag, Voucher, stackvec::StackVec,
+    Consumable, DeckCardIndices, Edition, Enhancement, Joker, PackState, PlayingCard, Seal,
+    Sticker, Tag, Voucher, stackvec::StackVec,
 };
 
 pub type TensorElement = f32;
@@ -354,7 +354,7 @@ macro_rules! impl_serialize_for_tuple {
         )+
     };
 }
-impl_serialize_for_tuple!((usize, StackVec<usize, MAX_DECK_CARDS>));
+impl_serialize_for_tuple!((usize, DeckCardIndices));
 
 macro_rules! impl_serialize_for_option {
     ($($t:ty),+) => {
