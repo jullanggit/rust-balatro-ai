@@ -18,6 +18,7 @@ use core::{
     ops::{Deref, Index, IndexMut},
 };
 use fastrand::Rng;
+use proc_macros::Serialize;
 use serialize::{Serialize, TensorElement};
 
 #[macro_use]
@@ -329,8 +330,7 @@ impl Game {
     }
 }
 
-#[derive(Debug, Default)]
-#[Serialize]
+#[derive(Debug, Default, Serialize)]
 pub enum GameState {
     #[default]
     SelectingDeck,
@@ -342,15 +342,13 @@ pub enum GameState {
 }
 
 /// State that is present during blind selection
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct SelectingBlind {
     in_game: InGame,
     pack: Option<PackState>,
 }
 /// State that is present in a round
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct InRound {
     in_game: InGame,
     hand_card_indices: HandCardIndices,
@@ -405,21 +403,19 @@ impl InRound {
     }
 }
 /// State that is present while cashing out
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct CashingOut {
     in_game: InGame,
 }
 /// State that is present in the Shop
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct InShop {
     in_game: InGame,
     pack: Option<PackState>,
 }
 /// State that is present after selecting Blind and Stake
-#[derive(Debug)]
-#[Serialize(cost_multiplier)]
+#[derive(Debug, Serialize)]
+#[serialize(cost_multiplier)]
 pub struct InGame {
     deck: Deck,
     stake: Stake,
@@ -452,8 +448,7 @@ impl InGame {
 }
 
 // TODO
-#[derive(Debug, PartialEq)]
-#[Serialize]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct PackState {}
 
 type Ante = u8;
@@ -465,8 +460,7 @@ type UseConsumable = (usize, DeckCardIndices);
 type PackIndices = StackVec<usize, MAX_PACK_ITEMS>;
 type MoveJoker = [usize; 2];
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub enum Action {
     SelectDeck(Deck),
     SelectStake(Stake),
@@ -503,8 +497,8 @@ pub trait Name {
     fn name(&self) -> &'static str;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[Serialize(buy_price, sell_price)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serialize(buy_price, sell_price)]
 pub struct Joker {
     joker_type: JokerType,
     edition: Option<Edition>,
@@ -635,8 +629,7 @@ impl Joker {
     }
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct JokerEffectType {
     pub chips: bool,
     pub add_mult: bool,
@@ -665,8 +658,7 @@ impl JokerEffectType {
     }
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct JokerCompatibility {
     pub copyable: bool,
     pub perishable: bool,
@@ -682,8 +674,7 @@ impl JokerCompatibility {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[Serialize]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Edition {
     Foil,
     Holographic,
@@ -701,8 +692,7 @@ impl Price for Edition {
     }
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub enum Rarity {
     Common,
     Uncommon,
@@ -710,8 +700,8 @@ pub enum Rarity {
     Legendary,
 }
 
-#[derive(Debug)]
-#[Serialize(buy_price, sell_price)]
+#[derive(Debug, Serialize)]
+#[serialize(buy_price, sell_price)]
 pub enum Consumable {
     Tarot(Tarot),
     Planet(Planet),
@@ -727,8 +717,7 @@ impl Price for Consumable {
     }
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub struct PlayingCard {
     suit: PlayingCardSuit,
     rank: PlayingCardRank,
@@ -836,8 +825,7 @@ impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
     }
 }
 
-#[derive(Debug, PartialEq)]
-#[Serialize]
+#[derive(Debug, PartialEq, Serialize)]
 pub enum PlayingCardSuit {
     Hearts,
     Spades,
@@ -857,9 +845,9 @@ impl PlayingCardSuit {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize)]
+#[serialize(is_face, is_numbered, is_even, is_odd)]
 #[repr(u8)]
-#[Serialize(is_face, is_numbered, is_even, is_odd)]
 pub enum PlayingCardRank {
     Two,
     Three,
@@ -919,8 +907,7 @@ impl PlayingCardRank {
 }
 
 #[repr(u8)]
-#[derive(Debug, PartialEq, PartialOrd)]
-#[Serialize]
+#[derive(Debug, PartialEq, PartialOrd, Serialize, Clone, Copy)]
 pub enum Hand {
     HighCard,
     Pair,
@@ -938,6 +925,7 @@ pub enum Hand {
 }
 
 /// [level; Hand]
+#[derive(Debug, Serialize)]
 struct HandLevels([u8; mem::variant_count::<Hand>()]);
 impl HandLevels {
     // (chips, mult) of a given hand at the stored level
@@ -977,8 +965,7 @@ impl IndexMut<Hand> for HandLevels {
     }
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub enum Enhancement {
     Bonus,
     Mult,
@@ -990,8 +977,7 @@ pub enum Enhancement {
     Lucky,
 }
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub enum Seal {
     Gold,
     Red,
@@ -999,8 +985,7 @@ pub enum Seal {
     Purple,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[Serialize]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Sticker {
     Eternal,
     Perishable,
@@ -1009,8 +994,7 @@ pub enum Sticker {
 
 macro_rules! EnumWithNameImpl {
     ($enum:ident, [$($name:ident),+]) => {
-        #[derive(Debug )]
-#[Serialize]
+        #[derive(Debug , Serialize)]
         pub enum $enum {
             $($name,)+
         }
@@ -1102,8 +1086,7 @@ impl Deck {
 
 EnumWithNameImpl!(Stake, [White, Red, Green, Black, Blue, Purple, Orane, Gold]);
 
-#[derive(Debug)]
-#[Serialize]
+#[derive(Debug, Serialize)]
 pub enum BlindProgress {
     Small,
     Big,
@@ -1124,8 +1107,7 @@ impl BlindProgress {
 
 macro_rules! BossBlind {
     ($(($min_ante:literal $(, $name:ident  $(,($base_mult:literal))? $(,[$reward:literal])?)*)),+) => {
-        #[derive(Debug, PartialEq )]
-#[Serialize]
+        #[derive(Debug, PartialEq , Serialize)]
         #[repr(u8)]
         pub enum BossBlind {
             $(
@@ -1212,8 +1194,7 @@ BossBlind!(
     )
 );
 
-#[derive(Debug, Clone, Copy)]
-#[Serialize]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum Tag {
     Uncommon,
     Rare,
@@ -1243,8 +1224,8 @@ pub enum Tag {
 
 macro_rules! Voucher {
     ($(($base:ident$(($ty:ident))?, $upgrade:ident)),+) => {
-        #[derive(Debug, PartialEq )]
-        #[Serialize(buy_price, sell_price)]
+        #[derive(Debug, PartialEq, Serialize)]
+        #[serialize(buy_price, sell_price)]
         pub enum Voucher {
             $(
                 $base$(($ty))?,
@@ -1291,8 +1272,8 @@ impl Price for Voucher {
 
 // see codegen crate
 // CODEGEN START
-#[derive(Debug)]
-#[Serialize(buy_price, sell_price)]
+#[derive(Debug, Serialize)]
+#[serialize(buy_price, sell_price)]
 pub enum Tarot {
     TheFool,
     TheMagician,
@@ -1374,8 +1355,8 @@ impl Price for Tarot {
     }
 }
 
-#[derive(Debug)]
-#[Serialize(buy_price, sell_price)]
+#[derive(Debug, Serialize)]
+#[serialize(buy_price, sell_price)]
 pub enum Planet {
     Pluto,
     Mercury,
@@ -1427,8 +1408,8 @@ impl Price for Planet {
     }
 }
 
-#[derive(Debug)]
-#[Serialize(buy_price, sell_price)]
+#[derive(Debug, Serialize)]
+#[serialize(buy_price, sell_price)]
 pub enum Spectral {
     Familiar,
     Grim,
@@ -1498,8 +1479,8 @@ impl Price for Spectral {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[Serialize(rarity, effect_type, compatibility)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serialize(rarity, effect_type, compatibility)]
 pub enum JokerType {
     EightBall,
     AbstractJoker,

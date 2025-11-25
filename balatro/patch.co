@@ -1,8 +1,0 @@
-@@
-list(identifier DS);
-tokenlist ARGS;
-@@
-- #[derive(DS)]
-- #[Serialize(ARGS)]
-+ #[derive(DS, Serialize)]
-+ #[serialize(ARGS)]

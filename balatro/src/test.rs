@@ -1,4 +1,5 @@
 use fastrand::Rng;
+use proc_macros::Serialize;
 
 use crate::{
     BossBlind, Hand, MAX_PLAYED_HAND_CARDS, PlayingCard, PlayingCardRank, PlayingCardSuit,
@@ -17,8 +18,8 @@ fn test_random_bossblind() {
 
 #[test]
 fn test_serialization() {
-    #[derive(Debug, PartialEq)]
-    #[Serialize(encode_me)]
+    #[derive(Debug, PartialEq, Serialize)]
+    #[serialize(encode_me)]
     pub enum Enum {
         A(u8),
         B,
@@ -36,8 +37,8 @@ fn test_serialization() {
     assert_eq!(serialized, [1., 0., 0., 0., 12., 3.]);
     assert_eq!(Serialize::deserialize(&serialized), Some(start));
 
-    #[derive(Debug, PartialEq)]
-    #[Serialize(also_encode)]
+    #[derive(Debug, PartialEq, Serialize)]
+    #[serialize(also_encode)]
     pub struct Struct {
         a: u8,
         b: f32,
