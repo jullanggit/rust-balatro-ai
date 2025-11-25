@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 fastrand = { version = "2.3.0", default-features = false }
+proc-macros = {path = "../proc-macros"}

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["balatro", "ai", "codegen"]
+members = ["balatro", "ai", "codegen", "proc-macros"]
 
 [[bin]]
 name = "balatro-ai"
