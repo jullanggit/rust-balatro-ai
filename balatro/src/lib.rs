@@ -213,10 +213,23 @@ impl Game {
                         }
 
                         // scoring cards
-                        for (index, _) in included
+                        for index in included
                             .into_iter()
                             .enumerate()
                             .filter(|(_, included)| *included)
+                            .map(|(index, _)| index)
+                            // stone cards
+                            .chain(
+                                played_cards
+                                    .iter()
+                                    .enumerate()
+                                    // that arent already scored
+                                    .filter(|(index, _)| !included[*index])
+                                    .filter(|(_, card)| {
+                                        card.enhancement == Some(Enhancement::Stone)
+                                    })
+                                    .map(|(index, _)| index),
+                            )
                         {
                             let card = &played_cards[index];
                             card.on_score(&mut chips, &mut mult);
@@ -800,7 +813,11 @@ impl PlayingCard {
     ) -> (Hand, [bool; MAX_PLAYED_HAND_CARDS]) {
         let (mut best_hand, mut included);
 
-        let mut cards: StackVec<_, MAX_PLAYED_HAND_CARDS> = cards.iter().enumerate().collect();
+        let mut cards: StackVec<_, MAX_PLAYED_HAND_CARDS> = cards
+            .iter()
+            .filter(|card| card.enhancement != Some(Enhancement::Stone))
+            .enumerate()
+            .collect();
         cards.sort_unstable_by_key(|(_, card)| card.rank);
 
         // n-of-a-kinds
@@ -881,7 +898,7 @@ impl PlayingCard {
     fn on_score(&self, chips: &mut f32, mult: &mut f32) {
         // chips
         *chips += self.rank.chips() as f32;
-        if matches!(self.edition, Some(Edition::Foil)) {
+        if self.edition == Some(Edition::Foil) {
             *chips += 50.;
         }
         *chips += match self.enhancement {
@@ -891,18 +908,18 @@ impl PlayingCard {
         };
 
         // +-mult
-        if matches!(self.enhancement, Some(Enhancement::Mult)) {
+        if self.enhancement == Some(Enhancement::Mult) {
             *mult += 4.;
         }
-        if matches!(self.edition, Some(Edition::Holographic)) {
+        if self.edition == Some(Edition::Holographic) {
             *mult += 10.;
         }
 
         // x-mult
-        if matches!(self.enhancement, Some(Enhancement::Glass)) {
+        if self.enhancement == Some(Enhancement::Glass) {
             *mult *= 2.;
         }
-        if matches!(self.edition, Some(Edition::Polychrome)) {
+        if self.edition == Some(Edition::Polychrome) {
             *mult *= 1.5;
         }
     }
@@ -1078,7 +1095,7 @@ impl IndexMut<Hand> for HandLevels {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq)]
 pub enum Enhancement {
     Bonus,
     Mult,
