@@ -173,11 +173,22 @@ impl Game {
                                 .all(|index| in_round.hand_card_indices.contains(index))
                         );
 
-                        let mut played_cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS> =
+                        // round entered jokers
+                        for i in 0..in_round.in_game.jokers.len() {
+                            // first clone joker...
+                            if let Some(mut joker) = in_round.in_game.jokers.get(i).cloned() {
+                                // ...then potentially remove the next joker...
+                                joker.on_round_entered(&mut in_round.in_game, i);
+                                // ...then update the current one
+                                in_round.in_game.jokers[i] = joker;
+                            }
+                        }
+
+                        let mut played_cards: StackVec<PlayingCard, MAX_PLAYED_HAND_CARDS> =
                             StackVec::new();
                         for index in hand_card_indices.iter() {
                             played_cards
-                                .push(&in_round.in_game.deck_cards[*index as usize])
+                                .push(in_round.in_game.deck_cards[*index as usize].clone())
                                 .unwrap();
 
                             InRound::mark_hand_card_as_used(
@@ -191,18 +202,29 @@ impl Game {
                         let (hand, included) = PlayingCard::hand(&played_cards);
                         let (mut chips, mut mult) = in_round.in_game.hand_levels.chips_mult(hand);
 
+                        // hand played jokers
+                        for joker in in_round.in_game.jokers.clone().iter() {
+                            joker.on_hand_played(
+                                hand,
+                                &mut chips,
+                                &mut mult,
+                                &mut in_round.in_game,
+                            );
+                        }
+
                         // scoring cards
-                        let jokers = &in_round.in_game.jokers;
                         for (index, _) in included
                             .into_iter()
                             .enumerate()
                             .filter(|(_, included)| *included)
                         {
-                            let card = played_cards[index];
+                            let card = &played_cards[index];
                             card.on_score(&mut chips, &mut mult);
 
-                            for joker in jokers.iter() {
-                                joker.on_card_scored(card, hand, &mut chips, &mut mult);
+                            for i in 0..in_round.in_game.jokers.len() {
+                                if let Some(joker) = in_round.in_game.jokers.get(i) {
+                                    joker.on_card_scored(card, hand, &mut chips, &mut mult);
+                                }
                             }
                         }
 
@@ -525,15 +547,18 @@ impl Price for Joker {
 // - Credit Card
 // - Dusk
 impl Joker {
-    fn on_round_entered(&self, in_game: &mut InGame, joker_index: usize) {
+    fn on_round_entered(&mut self, in_game: &mut InGame, current_joker_index: usize) {
         use JokerType::*;
 
-        match self.joker_type {
-            CeremonialDagger => {
-                in_game.jokers.remove(joker_index);
+        match &mut self.joker_type {
+            CeremonialDagger(mult) => {
+                let removed_joker = in_game.jokers.remove(current_joker_index + 1);
+                if let Some(joker) = removed_joker {
+                    *mult += joker.sell_price() as u16
+                }
             }
             MarbleJoker => {
-                in_game.deck_cards.push(PlayingCard {
+                let _ = in_game.deck_cards.push(PlayingCard {
                     enhancement: Some(Enhancement::Stone),
                     ..Default::default()
                 });
@@ -555,14 +580,7 @@ impl Joker {
             _ => {}
         }
     }
-    fn on_hand_played(
-        &self,
-        cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
-        hand: Hand,
-        chips: &mut f32,
-        mult: &mut f32,
-        in_game: &mut InGame,
-    ) {
+    fn on_hand_played(&self, hand: Hand, chips: &mut f32, mult: &mut f32, in_game: &mut InGame) {
         use JokerType::*;
 
         match self.joker_type {
@@ -767,7 +785,7 @@ impl Price for Consumable {
     }
 }
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, Clone)]
 pub struct PlayingCard {
     suit: PlayingCardSuit,
     rank: PlayingCardRank,
@@ -778,7 +796,7 @@ pub struct PlayingCard {
 }
 impl PlayingCard {
     fn hand(
-        cards: &StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        cards: &StackVec<PlayingCard, MAX_PLAYED_HAND_CARDS>,
     ) -> (Hand, [bool; MAX_PLAYED_HAND_CARDS]) {
         let (mut best_hand, mut included);
 
@@ -825,8 +843,7 @@ impl PlayingCard {
             _ => unreachable!(),
         };
 
-        let is_consecutive =
-            |[a, b]: &[(_, &&PlayingCard); 2]| a.1.rank as u8 + 1 == b.1.rank as u8;
+        let is_consecutive = |[a, b]: &[(_, &PlayingCard); 2]| a.1.rank as u8 + 1 == b.1.rank as u8;
         let is_straight = cards.array_windows().all(is_consecutive) // simple case
             // low ace
             || (cards.get(MAX_PLAYED_HAND_CARDS - 1).map(|card| card.1.rank)
@@ -903,7 +920,7 @@ impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Default)]
+#[derive(Debug, PartialEq, Serialize, Default, Clone, Copy)]
 pub enum PlayingCardSuit {
     #[default]
     Hearts,
@@ -1061,7 +1078,7 @@ impl IndexMut<Hand> for HandLevels {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Copy)]
 pub enum Enhancement {
     Bonus,
     Mult,
@@ -1073,7 +1090,7 @@ pub enum Enhancement {
     Lucky,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, Copy)]
 pub enum Seal {
     Gold,
     Red,
@@ -1603,7 +1620,8 @@ pub enum JokerType {
     Cartomancer,
     Castle,
     Cavendish,
-    CeremonialDagger,
+    /// (mult)
+    CeremonialDagger(u16),
     Certificate,
     ChaostheClown,
     Chicot,
@@ -1757,7 +1775,7 @@ impl JokerType {
             Self::Cartomancer => Rarity::Uncommon,
             Self::Castle => Rarity::Uncommon,
             Self::Cavendish => Rarity::Common,
-            Self::CeremonialDagger => Rarity::Uncommon,
+            Self::CeremonialDagger(_) => Rarity::Uncommon,
             Self::Certificate => Rarity::Uncommon,
             Self::ChaostheClown => Rarity::Common,
             Self::Chicot => Rarity::Legendary,
@@ -1911,7 +1929,9 @@ impl JokerType {
             Self::Cartomancer => JokerEffectType::new(false, false, false, true, false, false),
             Self::Castle => JokerEffectType::new(true, false, false, false, false, false),
             Self::Cavendish => JokerEffectType::new(false, false, true, false, false, false),
-            Self::CeremonialDagger => JokerEffectType::new(false, true, false, false, false, false),
+            Self::CeremonialDagger(_) => {
+                JokerEffectType::new(false, true, false, false, false, false)
+            }
             Self::Certificate => JokerEffectType::new(false, false, false, true, false, false),
             Self::ChaostheClown => JokerEffectType::new(false, false, false, true, false, false),
             Self::Chicot => JokerEffectType::new(false, false, false, true, false, false),
@@ -2067,7 +2087,7 @@ impl JokerType {
             Self::Cartomancer => JokerCompatibility::new(true, true, true),
             Self::Castle => JokerCompatibility::new(true, false, true),
             Self::Cavendish => JokerCompatibility::new(true, true, false),
-            Self::CeremonialDagger => JokerCompatibility::new(true, false, true),
+            Self::CeremonialDagger(_) => JokerCompatibility::new(true, false, true),
             Self::Certificate => JokerCompatibility::new(true, true, true),
             Self::ChaostheClown => JokerCompatibility::new(false, true, true),
             Self::Chicot => JokerCompatibility::new(false, true, true),
@@ -2223,7 +2243,7 @@ impl Name for JokerType {
             Self::Cartomancer => "Cartomancer",
             Self::Castle => "Castle",
             Self::Cavendish => "Cavendish",
-            Self::CeremonialDagger => "Ceremonial Dagger",
+            Self::CeremonialDagger(_) => "Ceremonial Dagger",
             Self::Certificate => "Certificate",
             Self::ChaostheClown => "Chaos the Clown",
             Self::Chicot => "Chicot",
@@ -2379,7 +2399,7 @@ impl Price for JokerType {
             Self::Cartomancer => 6,
             Self::Castle => 6,
             Self::Cavendish => 4,
-            Self::CeremonialDagger => 6,
+            Self::CeremonialDagger(_) => 6,
             Self::Certificate => 6,
             Self::ChaostheClown => 4,
             Self::Chicot => 20,

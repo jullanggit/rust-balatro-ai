@@ -142,6 +142,6 @@ fn test_playing_card_hand() {
     ];
     for (cards, expected) in cards {
         let cards = cards.map(|card| card.into());
-        assert_eq!(PlayingCard::hand(&cards.iter().collect()), expected);
+        assert_eq!(PlayingCard::hand(&cards.into_iter().collect()), expected);
     }
 }

@@ -111,13 +111,14 @@ impl<T, const CAPACITY: usize> Default for StackVec<T, CAPACITY> {
 
 impl<T, const CAPACITY: usize> Clone for StackVec<T, CAPACITY>
 where
-    T: Copy,
+    T: Clone,
 {
     fn clone(&self) -> Self {
-        Self {
-            len: self.len,
-            array: self.array,
+        let mut out = Self::new();
+        for item in self.iter().cloned() {
+            out.push(item).expect("out and self have the same capacity");
         }
+        out
     }
 }
 
