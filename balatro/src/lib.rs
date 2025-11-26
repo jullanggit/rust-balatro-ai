@@ -3,12 +3,10 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 #![feature(transmutability)]
-#![feature(macro_derive)]
 #![feature(generic_const_exprs)]
 #![feature(variant_count)]
 #![feature(macro_metavar_expr_concat)]
 #![feature(array_try_from_fn)]
-#![feature(macro_attr)]
 #![feature(array_windows)]
 
 use crate::stackvec::{Len, StackVec};
@@ -81,6 +79,8 @@ impl Game {
                                     vouchers: StackVec::new(),
                                     ante: 1,
                                     hand_size: 8,
+                                    hand_levels: HandLevels([1; _]),
+                                    joker_slots: 5,
                                 },
                                 pack: None,
                             });
@@ -101,6 +101,7 @@ impl Game {
                         let mut in_round = InRound {
                             hand_card_indices: StackVec::new(),
                             used_card_indices: StackVec::new(),
+                            discards_remaining: 3,
                             in_game,
                         };
 
@@ -187,12 +188,21 @@ impl Game {
                             .expect("We check that all indices are contained");
                         }
 
-                        let (hand, included) = PlayingCard::hand(played_cards);
+                        let (hand, included) = PlayingCard::hand(&played_cards);
                         let (mut chips, mut mult) = in_round.in_game.hand_levels.chips_mult(hand);
 
-                        for (index, included) in included.into_iter().enumerate() {
-                            if included {
-                                let card = played_cards[index];
+                        // scoring cards
+                        let jokers = &in_round.in_game.jokers;
+                        for (index, _) in included
+                            .into_iter()
+                            .enumerate()
+                            .filter(|(_, included)| *included)
+                        {
+                            let card = played_cards[index];
+                            card.on_score(&mut chips, &mut mult);
+
+                            for joker in jokers.iter() {
+                                joker.on_card_scored(card, hand, &mut chips, &mut mult);
                             }
                         }
 
@@ -265,10 +275,10 @@ impl Game {
                             cost_multiplier: f32,
                             collection: &mut StackVec<T, N>,
                             index: usize,
-                            money: &mut u32,
+                            money: &mut i32,
                         ) -> Option<()> {
                             let item = collection.remove(index)?;
-                            *money += (item.sell_price() as f32 * cost_multiplier) as u32;
+                            *money += (item.sell_price() as f32 * cost_multiplier) as i32;
 
                             Some(())
                         }
@@ -515,36 +525,47 @@ impl Price for Joker {
 // - Credit Card
 // - Dusk
 impl Joker {
-    /// On the final triggering of all jokers, without an "event"
-    fn on_triggered(
+    fn on_round_entered(&self, in_game: &mut InGame, joker_index: usize) {
+        use JokerType::*;
+
+        match self.joker_type {
+            CeremonialDagger => {
+                in_game.jokers.remove(joker_index);
+            }
+            MarbleJoker => {
+                in_game.deck_cards.push(PlayingCard {
+                    enhancement: Some(Enhancement::Stone),
+                    ..Default::default()
+                });
+            }
+            _ => {}
+        }
+    }
+    fn on_hand_discarded(
         &self,
+        cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        hand: Hand,
         chips: &mut f32,
         mult: &mut f32,
-        in_round: &mut InRound,
-        played_cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
-        rng: &mut Rng,
+        in_game: &mut InGame,
     ) {
         use JokerType::*;
 
-        match &mut self.joker_type {
-            Joker => *mult += 4.,
-            HalfJoker if played_cards.len() <= 3 => *mult += 20,
-            JokerStencil => {
-                *mult *= 1 + in_round.in_game.joker_slots - in_round.in_game.jokers.len()
-            }
-            Banner => *chips += 30 * in_round.discards_remaining,
-            MysticSummit if in_round.discards_remaining == 0 => *mult += 15,
-            LoyaltyCard(remaining) => match remaining {
-                0 => {
-                    *mult *= 4;
-                    *remaining = 5
-                }
-                1..=5 => *remaining -= 1,
-                _ => unreachable!(),
-            },
-            Misprint => *mult += rng.u8(..=23),
-            // TODO: do once we move away from indices
-            // RaisedFist => *mult += 2 * in_round.hand_card_indices,
+        match self.joker_type {
+            _ => {}
+        }
+    }
+    fn on_hand_played(
+        &self,
+        cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        hand: Hand,
+        chips: &mut f32,
+        mult: &mut f32,
+        in_game: &mut InGame,
+    ) {
+        use JokerType::*;
+
+        match self.joker_type {
             _ => {}
         }
     }
@@ -596,34 +617,63 @@ impl Joker {
         match self.joker_type {
             // TODO: create tarot
             EightBall if card.rank == PlayingCardRank::Eight => {}
+            _ => {}
         }
     }
-    fn on_hand_played(&self, chips: &mut f32, mult: &mut f32, in_game: &mut InGame) {
+    fn on_card_in_hand(&self, card: &PlayingCard, chips: &mut f32, mult: &mut f32) {
+        match self.joker_type {
+            _ => {}
+        }
+    }
+    /// On the final triggering of all jokers, without an "event"
+    fn on_triggered(
+        &mut self,
+        chips: &mut f32,
+        mult: &mut f32,
+        in_round: &mut InRound,
+        played_cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        rng: &mut Rng,
+    ) {
+        use JokerType::*;
+
+        match &mut self.joker_type {
+            Joker => *mult += 4.,
+            HalfJoker if played_cards.len() <= 3 => *mult += 20.,
+            JokerStencil => {
+                *mult *= 1.
+                    + (in_round
+                        .in_game
+                        .joker_slots
+                        .saturating_sub(in_round.in_game.jokers.len() as u8)) // don't go negative for the mult
+                        as f32
+            }
+            Banner => *chips += 30. * in_round.discards_remaining as f32,
+            MysticSummit if in_round.discards_remaining == 0 => *mult += 15.,
+            LoyaltyCard(remaining) => match remaining {
+                0 => {
+                    *mult *= 4.;
+                    *remaining = 5
+                }
+                1..=5 => *remaining -= 1,
+                _ => unreachable!(),
+            },
+            Misprint => *mult += rng.u8(..=23) as f32,
+            // TODO: do once we move away from indices
+            // RaisedFist => *mult += 2 * in_round.hand_card_indices,
+            _ => {}
+        }
+    }
+    fn on_round_exit(&self, in_game: &mut InGame) {
         use JokerType::*;
 
         match self.joker_type {
             _ => {}
         }
     }
-    fn on_round_entered(
-        &self,
-        chips: &mut f32,
-        mult: &mut f32,
-        in_game: &mut InGame,
-        joker_index: usize,
-    ) {
+    fn on_sold(&self, in_game: &mut InGame) {
         use JokerType::*;
 
         match self.joker_type {
-            CeremonialDagger => {
-                in_game.jokers.remove(joker_index);
-            }
-            MarbleJoker => {
-                in_game.deck_cards.push(PlayingCard {
-                    enhancement: Some(Enhancement::Stone),
-                    ..Default::default()
-                });
-            }
             _ => {}
         }
     }
@@ -717,7 +767,7 @@ impl Price for Consumable {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct PlayingCard {
     suit: PlayingCardSuit,
     rank: PlayingCardRank,
@@ -728,7 +778,7 @@ pub struct PlayingCard {
 }
 impl PlayingCard {
     fn hand(
-        cards: StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
+        cards: &StackVec<&PlayingCard, MAX_PLAYED_HAND_CARDS>,
     ) -> (Hand, [bool; MAX_PLAYED_HAND_CARDS]) {
         let (mut best_hand, mut included);
 
@@ -811,6 +861,34 @@ impl PlayingCard {
 
         (best_hand, included)
     }
+    fn on_score(&self, chips: &mut f32, mult: &mut f32) {
+        // chips
+        *chips += self.rank.chips() as f32;
+        if matches!(self.edition, Some(Edition::Foil)) {
+            *chips += 50.;
+        }
+        *chips += match self.enhancement {
+            Some(Enhancement::Bonus) => 30.,
+            Some(Enhancement::Stone) => 50.,
+            _ => 0.,
+        };
+
+        // +-mult
+        if matches!(self.enhancement, Some(Enhancement::Mult)) {
+            *mult += 4.;
+        }
+        if matches!(self.edition, Some(Edition::Holographic)) {
+            *mult += 10.;
+        }
+
+        // x-mult
+        if matches!(self.enhancement, Some(Enhancement::Glass)) {
+            *mult *= 2.;
+        }
+        if matches!(self.edition, Some(Edition::Polychrome)) {
+            *mult *= 1.5;
+        }
+    }
 }
 impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
     fn from((suit, rank): (PlayingCardSuit, PlayingCardRank)) -> Self {
@@ -825,8 +903,9 @@ impl From<(PlayingCardSuit, PlayingCardRank)> for PlayingCard {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Default)]
 pub enum PlayingCardSuit {
+    #[default]
     Hearts,
     Spades,
     Clubs,
@@ -845,10 +924,11 @@ impl PlayingCardSuit {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Default)]
 #[serialize(is_face, is_numbered, is_even, is_odd)]
 #[repr(u8)]
 pub enum PlayingCardRank {
+    #[default]
     Two,
     Three,
     Four,
@@ -903,6 +983,22 @@ impl PlayingCardRank {
             self,
             Self::Ace | Self::Three | Self::Five | Self::Seven | Self::Nine
         )
+    }
+    pub fn chips(&self) -> u8 {
+        use PlayingCardRank::*;
+
+        match self {
+            Two => 2,
+            Three => 3,
+            Four => 4,
+            Five => 5,
+            Six => 6,
+            Seven => 7,
+            Eight => 8,
+            Nine => 9,
+            Ten | Jack | Queen | King => 10,
+            Ace => 11,
+        }
     }
 }
 
@@ -1709,7 +1805,7 @@ impl JokerType {
             Self::JokerStencil => Rarity::Uncommon,
             Self::JollyJoker => Rarity::Common,
             Self::Juggler => Rarity::Common,
-            Self::LoyaltyCard => Rarity::Uncommon,
+            Self::LoyaltyCard(_) => Rarity::Uncommon,
             Self::Luchador => Rarity::Uncommon,
             Self::LuckyCat => Rarity::Uncommon,
             Self::LustyJoker => Rarity::Common,
@@ -1865,7 +1961,7 @@ impl JokerType {
             Self::JokerStencil => JokerEffectType::new(false, false, true, false, false, false),
             Self::JollyJoker => JokerEffectType::new(false, true, false, false, false, false),
             Self::Juggler => JokerEffectType::new(false, false, false, true, false, false),
-            Self::LoyaltyCard => JokerEffectType::new(false, false, true, false, false, false),
+            Self::LoyaltyCard(_) => JokerEffectType::new(false, false, true, false, false, false),
             Self::Luchador => JokerEffectType::new(false, false, false, true, false, false),
             Self::LuckyCat => JokerEffectType::new(false, false, true, false, false, false),
             Self::LustyJoker => JokerEffectType::new(false, true, false, false, false, false),
@@ -2019,7 +2115,7 @@ impl JokerType {
             Self::JokerStencil => JokerCompatibility::new(true, true, true),
             Self::JollyJoker => JokerCompatibility::new(true, true, true),
             Self::Juggler => JokerCompatibility::new(false, true, true),
-            Self::LoyaltyCard => JokerCompatibility::new(true, true, true),
+            Self::LoyaltyCard(_) => JokerCompatibility::new(true, true, true),
             Self::Luchador => JokerCompatibility::new(true, true, false),
             Self::LuckyCat => JokerCompatibility::new(true, false, true),
             Self::LustyJoker => JokerCompatibility::new(true, true, true),
@@ -2175,7 +2271,7 @@ impl Name for JokerType {
             Self::JokerStencil => "Joker Stencil",
             Self::JollyJoker => "Jolly Joker",
             Self::Juggler => "Juggler",
-            Self::LoyaltyCard => "Loyalty Card",
+            Self::LoyaltyCard(_) => "Loyalty Card",
             Self::Luchador => "Luchador",
             Self::LuckyCat => "Lucky Cat",
             Self::LustyJoker => "Lusty Joker",
@@ -2331,7 +2427,7 @@ impl Price for JokerType {
             Self::JokerStencil => 8,
             Self::JollyJoker => 3,
             Self::Juggler => 4,
-            Self::LoyaltyCard => 5,
+            Self::LoyaltyCard(_) => 5,
             Self::Luchador => 5,
             Self::LuckyCat => 6,
             Self::LustyJoker => 5,
